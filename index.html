@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>宇宙胡扯对战</title>
+<title>宇宙胡扯对战 V3</title>
 
 <style>
 
@@ -13,15 +13,14 @@ color:white;
 }
 
 button{
-padding:8px;
-margin:5px;
-font-size:14px;
+padding:10px;
+margin:6px;
+font-size:16px;
 cursor:pointer;
 }
 
-#actions{
-width:400px;
-margin:auto;
+#options{
+margin-top:10px;
 }
 
 #chatBox{
@@ -59,15 +58,9 @@ overflow:auto;
 
 <h3 id="status">Waiting...</h3>
 
-<h3>Your HP</h3>
-<div id="hpDisplay"></div>
+<h3>Time Left: <span id="timer">10</span></h3>
 
-<h3>Opponent HP</h3>
-<div id="enemyHpDisplay"></div>
-
-<br>
-
-<div id="actions"></div>
+<div id="options"></div>
 
 <h3 id="log"></h3>
 
@@ -88,7 +81,7 @@ overflow:auto;
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const firebaseConfig={
 apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
@@ -103,47 +96,192 @@ appId:"1:286675354503:web:00a87613f420cd07a30922"
 const app=initializeApp(firebaseConfig)
 const db=getDatabase(app)
 
+let playerId=Math.random().toString(36).substring(2)
+let playerName=""
+let room=""
+let round=1
+
 const items=[
-"榴莲","拖鞋","老板","外星人","WiFi","程序员",
-"咖啡","猫","辣椒","AI","deadline","熊猫"
+"猫","WiFi","老板","程序员","咖啡","拖鞋","榴莲","熊猫",
+"AI","deadline","辣椒","外星人","老师","考试","闹钟",
+"枕头","键盘","Bug","奶茶","手机","电池","马桶",
+"雨伞","龙卷风","乌龟","月亮","火山","袜子","披萨","作业"
 ]
 
 const jokes=[
-"因为宇宙运行规律如此",
-"因为程序员没有睡觉",
-"因为老板今天心情不好",
-"因为WiFi突然断线",
 "因为猫踩了路由器",
+"因为老板突然开会",
+"因为程序员三天没睡",
+"因为WiFi断线",
+"因为AI升级了",
 "因为熊猫太可爱",
 "因为deadline来了",
-"因为AI升级了",
+"因为榴莲太臭",
 "因为拖鞋是亚洲神器",
-"因为榴莲太臭了"
+"因为咖啡续命成功",
+"因为Bug出现了",
+"因为手机没电",
+"因为奶茶加珍珠",
+"因为老师看见了",
+"因为考试突然出现",
+"因为火山爆发",
+"因为月亮变圆了",
+"因为披萨太好吃",
+"因为乌龟走太慢",
+"因为龙卷风来了",
+"因为马桶堵了",
+"因为闹钟响了",
+"因为枕头太舒服",
+"因为雨伞飞走了",
+"因为袜子失踪",
+"因为电池耗尽",
+"因为键盘坏了",
+"因为作业太多",
+"因为外星人降临",
+"因为辣椒太辣"
 ]
 
-let room=""
-let playerName=""
-let playerId=Math.random().toString(36).substring(2)
+let currentOptions=[]
+let timer=10
+let myChoice=null
 
-let hp=10
-let enemyHp=10
-let round=1
+function random3(){
 
-function randomJoke(){
-return jokes[Math.floor(Math.random()*jokes.length)]
+let shuffled=[...items].sort(()=>0.5-Math.random())
+
+return shuffled.slice(0,3)
+
 }
 
-function generateButtons(){
+function renderOptions(){
 
-const container=document.getElementById("actions")
+const container=document.getElementById("options")
+container.innerHTML=""
 
-items.forEach((item,i)=>{
+currentOptions.forEach((opt,i)=>{
 
 let btn=document.createElement("button")
-btn.innerText=item
-btn.onclick=()=>sendAction(i)
+btn.innerText=opt
+btn.onclick=()=>choose(i)
 
 container.appendChild(btn)
+
+})
+
+}
+
+function startRound(){
+
+currentOptions=random3()
+myChoice=null
+timer=10
+
+renderOptions()
+
+update(ref(db,"rooms/"+room),{
+options:currentOptions,
+round:round
+})
+
+startTimer()
+
+}
+
+function startTimer(){
+
+const interval=setInterval(()=>{
+
+timer--
+document.getElementById("timer").innerText=timer
+
+if(timer<=0){
+
+clearInterval(interval)
+
+if(myChoice===null){
+
+myChoice=Math.floor(Math.random()*3)
+
+set(ref(db,"rooms/"+room+"/actions/"+playerId),{
+choice:myChoice,
+name:playerName
+})
+
+}
+
+}
+
+},1000)
+
+}
+
+function choose(i){
+
+myChoice=i
+
+set(ref(db,"rooms/"+room+"/actions/"+playerId),{
+choice:i,
+name:playerName
+})
+
+}
+
+function resolveBattle(p1,p2){
+
+let a=p1.choice
+let b=p2.choice
+
+let result="Draw"
+
+if(a===b){
+result="Draw"
+}
+
+else if(
+(a===0 && b===1) ||
+(a===1 && b===2) ||
+(a===2 && b===0)
+){
+result=p1.name+" win"
+}
+
+else{
+result=p2.name+" win"
+}
+
+let joke=jokes[Math.floor(Math.random()*jokes.length)]
+
+document.getElementById("log").innerText=
+currentOptions[a]+" vs "+currentOptions[b]+"\n"+result+"\n"+joke
+
+let historyText=
+"R"+round+" "+currentOptions[a]+" vs "+currentOptions[b]+" → "+result
+
+document.getElementById("history").innerHTML+=historyText+"<br>"
+
+round++
+
+setTimeout(startRound,3000)
+
+}
+
+function listenActions(){
+
+const actionsRef=ref(db,"rooms/"+room+"/actions")
+
+onValue(actionsRef,(snapshot)=>{
+
+const data=snapshot.val()
+if(!data)return
+
+const players=Object.values(data)
+
+if(players.length===2){
+
+resolveBattle(players[0],players[1])
+remove(actionsRef)
+
+}
 
 })
 
@@ -159,122 +297,15 @@ document.getElementById("status").innerText="Joined "+room
 listenActions()
 listenChat()
 
-}
-
-function listenActions(){
-
-const actionsRef=ref(db,"rooms/"+room+"/actions")
-
-onValue(actionsRef,(snapshot)=>{
-
-const data=snapshot.val()
-if(!data)return
-
-const players=Object.keys(data)
-
-if(players.length<2)return
-
-const a=data[players[0]]
-const b=data[players[1]]
-
-resolveBattle(a,b)
-
-remove(actionsRef)
-
-})
-
-}
-
-function resolveBattle(a,b){
-
-let pIndex=a.player===playerId?a.action:b.action
-let eIndex=a.player===playerId?b.action:a.action
-
-let diff=(pIndex-eIndex+items.length)%items.length
-
-let winner="Draw"
-
-if(diff===0){
-winner="Draw"
-}
-
-else if(diff<=5){
-enemyHp--
-winner=playerName+" win"
-}
-
-else{
-hp--
-winner="Opponent win"
-}
-
-let joke=randomJoke()
-
-let resultText=
-
-items[pIndex]+" vs "+items[eIndex]+
-"\n"+winner+
-"\n"+joke
-
-document.getElementById("log").innerText=resultText
-
-const historyText=
-"R"+round+" "+items[pIndex]+" vs "+items[eIndex]+" → "+winner
-
-const historyDiv=document.getElementById("history")
-
-historyDiv.innerHTML+=historyText+"<br>"
-
-round++
-
-updateUI()
-
-}
-
-window.sendAction=function(action){
-
-set(ref(db,"rooms/"+room+"/actions/"+playerId),{
-
-name:playerName,
-player:playerId,
-action:action
-
-})
-
-}
-
-function updateUI(){
-
-let hearts=""
-let enemyHearts=""
-
-for(let i=0;i<hp;i++) hearts+="❤️ "
-for(let i=0;i<enemyHp;i++) enemyHearts+="❤️ "
-
-document.getElementById("hpDisplay").innerText=hearts
-document.getElementById("enemyHpDisplay").innerText=enemyHearts
-
-if(hp<=0){
-document.getElementById("status").innerText="💀 You lost"
-}
-
-if(enemyHp<=0){
-document.getElementById("status").innerText="🏆 You win"
-}
+startRound()
 
 }
 
 window.newGame=function(){
 
-hp=10
-enemyHp=10
 round=1
-
 document.getElementById("history").innerHTML=""
-document.getElementById("log").innerText=""
-document.getElementById("status").innerText="New Game"
-
-updateUI()
+startRound()
 
 }
 
@@ -283,10 +314,8 @@ window.sendChat=function(){
 const message=document.getElementById("chatInput").value
 
 set(ref(db,"rooms/"+room+"/chat/"+Date.now()),{
-
 name:playerName,
 text:message
-
 })
 
 document.getElementById("chatInput").value=""
@@ -319,15 +348,8 @@ document.getElementById("chatBox").innerHTML=html
 }
 
 document.getElementById("chatInput").addEventListener("keypress",function(e){
-
-if(e.key==="Enter"){
-sendChat()
-}
-
+if(e.key==="Enter") sendChat()
 })
-
-generateButtons()
-updateUI()
 
 </script>
 
