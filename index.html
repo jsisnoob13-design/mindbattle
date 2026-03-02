@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+
 <title>Mind Battle PvP</title>
 
 <style>
@@ -19,24 +20,19 @@ font-size:16px;
 cursor:pointer;
 }
 
-.bar{
-height:20px;
-background:red;
-width:200px;
-margin:auto;
-}
-
-.energy{
-background:orange;
-}
-
 #chatBox{
 height:150px;
 overflow:auto;
 border:1px solid white;
-width:300px;
+width:320px;
 margin:auto;
 padding:10px;
+}
+
+.rules{
+width:420px;
+margin:auto;
+text-align:left;
 }
 
 </style>
@@ -47,7 +43,36 @@ padding:10px;
 
 <h1>Mind Battle PvP</h1>
 
+<div class="rules">
+
+<b>Game Rules</b>
+
+<ul>
+
+<li>Both players secretly choose an action.</li>
+<li>Actions reveal at the same time.</li>
+<li>First player to lose all HP loses the round.</li>
+<li>First player to win <b>10 rounds</b> wins the match.</li>
+
+</ul>
+
+<b>Actions</b>
+
+<ul>
+
+<li>⚔ Attack — damage opponent</li>
+<li>🛡 Defend — block attack</li>
+<li>⚡ Charge — gain energy</li>
+<li>💥 Power — strong attack (cost 2 energy)</li>
+
+</ul>
+
+</div>
+
+<br>
+
 <input id="name" placeholder="Your name">
+
 <br><br>
 
 <input id="room" placeholder="Room code">
@@ -64,12 +89,15 @@ padding:10px;
 <button onclick="sendAction('power')">💥 Power</button>
 
 <h3>HP</h3>
-<div class="bar" id="hpbar"></div>
+<div id="hpDisplay"></div>
 
 <h3>Energy</h3>
-<div class="bar energy" id="energybar"></div>
+<div id="energyDisplay"></div>
 
 <h3 id="log"></h3>
+
+<h2>Score</h2>
+<div id="scoreBoard"></div>
 
 <h2>Chat</h2>
 
@@ -97,16 +125,33 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 let room=""
-let playerId=Math.random().toString(36).substring(2)
 let playerName=""
+let playerId=Math.random().toString(36).substring(2)
 
 let hp=10
 let energy=2
 
+let wins=0
+let opponentWins=0
+
 function updateUI(){
 
-document.getElementById("hpbar").style.width=(hp*20)+"px"
-document.getElementById("energybar").style.width=(energy*20)+"px"
+let hpIcons=""
+for(let i=0;i<hp;i++){
+hpIcons+="❤️ "
+}
+
+document.getElementById("hpDisplay").innerText=hpIcons
+
+let energyIcons=""
+for(let i=0;i<energy;i++){
+energyIcons+="⚡ "
+}
+
+document.getElementById("energyDisplay").innerText=energyIcons
+
+document.getElementById("scoreBoard").innerText=
+playerName+" "+wins+" - "+opponentWins
 
 }
 
@@ -130,29 +175,37 @@ onValue(actionsRef,(snapshot)=>{
 
 const data=snapshot.val()
 
-if(!data)return
+if(!data) return
 
 const players=Object.keys(data)
 
-if(players.length==1){
+if(players.length===1){
 
 if(players[0]!==playerId){
 
-document.getElementById("enemyStatus").innerText="Opponent has chosen"
+document.getElementById("enemyStatus").innerText="Opponent has chosen!"
 
 }
 
 return
 }
 
-if(players.length<2)return
+if(players.length<2) return
+
+document.getElementById("enemyStatus").innerText="⚔ Reveal!"
 
 const a=data[players[0]]
 const b=data[players[1]]
 
+setTimeout(()=>{
+
 resolveBattle(a,b)
 
 remove(actionsRef)
+
+document.getElementById("enemyStatus").innerText="Next round"
+
+},1200)
 
 })
 
@@ -160,24 +213,24 @@ remove(actionsRef)
 
 function resolveBattle(a,b){
 
-let log=""
+let log=a.name+" used "+a.action+" | "+b.name+" used "+b.action
 
 if(a.action==="attack" && b.action==="charge"){
 
-log=a.name+" attacked charging enemy"
+log+=" — Attack hits!"
+hp--
 
 }
 
 else if(a.action==="attack" && b.action==="defend"){
 
-log="Attack blocked"
+log+=" — Blocked"
 
 }
 
 else if(a.action==="charge"){
 
 energy++
-log=a.name+" charged energy"
 
 }
 
@@ -186,12 +239,9 @@ else if(a.action==="power"){
 if(energy>=2){
 
 energy-=2
-log=a.name+" used power attack"
+hp-=2
 
-}
-else{
-
-log="Not enough energy"
+log+=" — Power attack!"
 
 }
 
@@ -199,11 +249,26 @@ log="Not enough energy"
 
 document.getElementById("log").innerText=log
 
-updateUI()
-
 if(hp<=0){
 
-document.getElementById("status").innerText="You lost"
+opponentWins++
+
+resetRound()
+
+}
+
+updateUI()
+
+}
+
+function resetRound(){
+
+hp=10
+energy=2
+
+if(opponentWins>=10){
+
+document.getElementById("status").innerText="You lost the match"
 
 }
 
