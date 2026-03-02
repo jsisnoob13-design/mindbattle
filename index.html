@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-
-<title>Mind Battle PvP</title>
+<title>Mind Battle - Rock Paper Scissors Gun</title>
 
 <style>
 
@@ -15,7 +14,7 @@ color:white;
 
 button{
 padding:10px;
-margin:8px;
+margin:6px;
 font-size:16px;
 cursor:pointer;
 }
@@ -41,30 +40,27 @@ text-align:left;
 
 <body>
 
-<h1>Mind Battle PvP</h1>
+<h1>Mind Battle</h1>
 
 <div class="rules">
 
-<b>Game Rules</b>
+<b>How to Play</b>
 
 <ul>
-
 <li>Both players secretly choose an action.</li>
 <li>Actions reveal at the same time.</li>
-<li>First player to lose all HP loses the round.</li>
-<li>First player to win <b>10 rounds</b> wins the match.</li>
-
+<li>Winner removes one ❤️ from opponent.</li>
+<li>First player to lose all hearts loses.</li>
 </ul>
 
 <b>Actions</b>
 
 <ul>
-
-<li>⚔ Attack — damage opponent</li>
-<li>🛡 Defend — block attack</li>
-<li>⚡ Charge — gain energy</li>
-<li>💥 Power — strong attack (cost 2 energy)</li>
-
+<li>🪨 Rock beats ✂ Scissors</li>
+<li>✂ Scissors beats 📄 Paper</li>
+<li>📄 Paper beats 🪨 Rock</li>
+<li>💥 Gun beats everything</li>
+<li>Gun has a 3 round cooldown</li>
 </ul>
 
 </div>
@@ -83,21 +79,17 @@ text-align:left;
 
 <br>
 
-<button onclick="sendAction('attack')">⚔ Attack</button>
-<button onclick="sendAction('defend')">🛡 Defend</button>
-<button onclick="sendAction('charge')">⚡ Charge</button>
-<button onclick="sendAction('power')">💥 Power</button>
+<button onclick="sendAction('rock')">🪨 Rock</button>
+<button onclick="sendAction('paper')">📄 Paper</button>
+<button onclick="sendAction('scissors')">✂ Scissors</button>
+<button onclick="sendAction('gun')">💥 Gun</button>
 
 <h3>HP</h3>
 <div id="hpDisplay"></div>
 
-<h3>Energy</h3>
-<div id="energyDisplay"></div>
+<h3 id="gunStatus"></h3>
 
 <h3 id="log"></h3>
-
-<h2>Score</h2>
-<div id="scoreBoard"></div>
 
 <h2>Chat</h2>
 
@@ -111,7 +103,7 @@ text-align:left;
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-const firebaseConfig = {
+const firebaseConfig={
 apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
 authDomain:"mindbattle-f00a3.firebaseapp.com",
 databaseURL:"https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -119,39 +111,33 @@ projectId:"mindbattle-f00a3",
 storageBucket:"mindbattle-f00a3.firebasestorage.app",
 messagingSenderId:"286675354503",
 appId:"1:286675354503:web:00a87613f420cd07a30922"
-};
+}
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const app=initializeApp(firebaseConfig)
+const db=getDatabase(app)
 
 let room=""
 let playerName=""
 let playerId=Math.random().toString(36).substring(2)
 
 let hp=10
-let energy=2
-
-let wins=0
-let opponentWins=0
+let gunCooldown=0
 
 function updateUI(){
 
-let hpIcons=""
+let hearts=""
+
 for(let i=0;i<hp;i++){
-hpIcons+="❤️ "
+hearts+="❤️ "
 }
 
-document.getElementById("hpDisplay").innerText=hpIcons
+document.getElementById("hpDisplay").innerText=hearts
 
-let energyIcons=""
-for(let i=0;i<energy;i++){
-energyIcons+="⚡ "
+if(gunCooldown>0){
+document.getElementById("gunStatus").innerText="Gun cooldown: "+gunCooldown
+}else{
+document.getElementById("gunStatus").innerText="Gun ready"
 }
-
-document.getElementById("energyDisplay").innerText=energyIcons
-
-document.getElementById("scoreBoard").innerText=
-playerName+" "+wins+" - "+opponentWins
 
 }
 
@@ -175,22 +161,20 @@ onValue(actionsRef,(snapshot)=>{
 
 const data=snapshot.val()
 
-if(!data) return
+if(!data)return
 
 const players=Object.keys(data)
 
 if(players.length===1){
 
 if(players[0]!==playerId){
-
 document.getElementById("enemyStatus").innerText="Opponent has chosen!"
-
 }
 
 return
 }
 
-if(players.length<2) return
+if(players.length<2)return
 
 document.getElementById("enemyStatus").innerText="⚔ Reveal!"
 
@@ -205,7 +189,7 @@ remove(actionsRef)
 
 document.getElementById("enemyStatus").innerText="Next round"
 
-},1200)
+},1000)
 
 })
 
@@ -215,72 +199,70 @@ function resolveBattle(a,b){
 
 let log=a.name+" used "+a.action+" | "+b.name+" used "+b.action
 
-if(a.action==="attack" && b.action==="charge"){
+let playerAction=a.player===playerId?a.action:b.action
+let enemyAction=a.player===playerId?b.action:a.action
 
-log+=" — Attack hits!"
+if(playerAction==="gun" && gunCooldown>0){
+log="Gun is on cooldown!"
+}else{
+
+if(playerAction==="gun"){
+gunCooldown=3
+}
+
+if(enemyAction==="gun" && playerAction!=="gun"){
 hp--
+log+=" — Gun wins"
+}
+
+else if(playerAction==="rock" && enemyAction==="scissors"){
+log+=" — Rock wins"
+}
+
+else if(playerAction==="paper" && enemyAction==="rock"){
+log+=" — Paper wins"
+}
+
+else if(playerAction==="scissors" && enemyAction==="paper"){
+log+=" — Scissors wins"
+}
+
+else if(playerAction===enemyAction){
+log+=" — Draw"
+}
+
+else{
+hp--
+log+=" — You lose round"
+}
 
 }
 
-else if(a.action==="attack" && b.action==="defend"){
-
-log+=" — Blocked"
-
-}
-
-else if(a.action==="charge"){
-
-energy++
-
-}
-
-else if(a.action==="power"){
-
-if(energy>=2){
-
-energy-=2
-hp-=2
-
-log+=" — Power attack!"
-
-}
-
-}
+if(gunCooldown>0)gunCooldown--
 
 document.getElementById("log").innerText=log
 
 if(hp<=0){
-
-opponentWins++
-
-resetRound()
-
+document.getElementById("status").innerText="💀 You lost"
 }
 
 updateUI()
 
 }
 
-function resetRound(){
-
-hp=10
-energy=2
-
-if(opponentWins>=10){
-
-document.getElementById("status").innerText="You lost the match"
-
-}
-
-}
-
 window.sendAction=function(action){
+
+if(action==="gun" && gunCooldown>0){
+alert("Gun on cooldown")
+return
+}
 
 document.getElementById("enemyStatus").innerText="Waiting for opponent..."
 
 set(ref(db,"rooms/"+room+"/actions/"+playerId),{
 
 name:playerName,
+player:playerId,
 action:action
 
 })
@@ -315,9 +297,7 @@ if(!data)return
 let html=""
 
 Object.values(data).forEach(msg=>{
-
 html+=`<div><b>${msg.name}:</b> ${msg.text}</div>`
-
 })
 
 document.getElementById("chatBox").innerHTML=html
