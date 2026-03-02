@@ -17,6 +17,10 @@ margin:10px;
 font-size:18px;
 cursor:pointer;
 }
+
+#log{
+margin-top:20px;
+}
 </style>
 
 </head>
@@ -36,27 +40,42 @@ cursor:pointer;
 <button onclick="sendAction('power')">💥 Power</button>
 
 <h3 id="status">Waiting...</h3>
-<h3 id="result"></h3>
+
+<h3>Your HP: <span id="hp">10</span></h3>
+<h3>Your Energy: <span id="energy">2</span></h3>
+
+<div id="log"></div>
 
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-  authDomain: "mindbattle-f00a3.firebaseapp.com",
-  databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "mindbattle-f00a3",
-  storageBucket: "mindbattle-f00a3.firebasestorage.app",
-  messagingSenderId: "286675354503",
-  appId: "1:286675354503:web:00a87613f420cd07a30922"
+apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+authDomain: "mindbattle-f00a3.firebaseapp.com",
+databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+projectId: "mindbattle-f00a3",
+storageBucket: "mindbattle-f00a3.firebasestorage.app",
+messagingSenderId: "286675354503",
+appId: "1:286675354503:web:00a87613f420cd07a30922"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 let room="";
+let playerId=Math.random().toString(36).substring(2);
+
+let hp=10;
+let energy=2;
+
+function updateUI(){
+
+document.getElementById("hp").innerText=hp
+document.getElementById("energy").innerText=energy
+
+}
 
 window.joinRoom=function(){
 
@@ -70,55 +89,72 @@ onValue(roomRef,(snapshot)=>{
 
 const data=snapshot.val()
 
-if(data){
-document.getElementById("result").innerText=
-JSON.stringify(data,null,2)
-}
+if(!data)return
+
+let actions=Object.values(data)
+
+if(actions.length<2)return
+
+let a=actions[actions.length-2]
+let b=actions[actions.length-1]
+
+resolveBattle(a.action,b.action)
 
 })
 
 }
 
-let hp = 10
-let energy = 2
+function resolveBattle(a,b){
 
-function resolve(action){
+let log=""
 
-let result = ""
-
-if(action == "attack"){
-result = "You attacked!"
+if(a=="attack" && b=="charge"){
+log="Attack hits charging enemy!"
 }
 
-if(action == "defend"){
-result = "You defended!"
+if(a=="attack" && b=="defend"){
+log="Attack blocked!"
 }
 
-if(action == "charge"){
-energy += 1
-result = "Energy +1"
+if(a=="charge"){
+energy+=1
+log="You charged energy"
 }
 
-if(action == "power"){
+if(a=="power"){
 
-if(energy >= 2){
-energy -= 2
-result = "Power attack!"
+if(energy>=2){
+energy-=2
+log="Power attack unleashed!"
 }else{
-result = "Not enough energy"
+log="Not enough energy"
 }
 
 }
 
-document.getElementById("result").innerText =
-result + " | HP:"+hp+" Energy:"+energy
+document.getElementById("log").innerText=log
+
+updateUI()
+
+if(hp<=0){
+document.getElementById("status").innerText="You Lost!"
+}
 
 }
 
 window.sendAction=function(action){
 
-resolve(action)
-
-set(ref(db,"rooms/"+room+"/"+Date.now()),action)
+push(ref(db,"rooms/"+room),{
+player:playerId,
+action:action
+})
 
 }
+
+updateUI()
+
+</script>
+
+</body>
+
+</html>
