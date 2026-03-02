@@ -79,13 +79,46 @@ JSON.stringify(data,null,2)
 
 }
 
+let hp = 10
+let energy = 2
+
+function resolve(action){
+
+let result = ""
+
+if(action == "attack"){
+result = "You attacked!"
+}
+
+if(action == "defend"){
+result = "You defended!"
+}
+
+if(action == "charge"){
+energy += 1
+result = "Energy +1"
+}
+
+if(action == "power"){
+
+if(energy >= 2){
+energy -= 2
+result = "Power attack!"
+}else{
+result = "Not enough energy"
+}
+
+}
+
+document.getElementById("result").innerText =
+result + " | HP:"+hp+" Energy:"+energy
+
+}
+
 window.sendAction=function(action){
+
+resolve(action)
 
 set(ref(db,"rooms/"+room+"/"+Date.now()),action)
 
 }
-
-</script>
-
-</body>
-</html>
