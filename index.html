@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Mind Battle - Rock Paper Scissors Gun</title>
+<title>Mind Battle</title>
 
 <style>
 
@@ -19,6 +19,12 @@ font-size:16px;
 cursor:pointer;
 }
 
+.rules{
+width:420px;
+margin:auto;
+text-align:left;
+}
+
 #chatBox{
 height:150px;
 overflow:auto;
@@ -28,14 +34,17 @@ margin:auto;
 padding:10px;
 }
 
-.rules{
-width:420px;
+#history{
+width:320px;
 margin:auto;
 text-align:left;
+border:1px solid white;
+padding:10px;
+max-height:150px;
+overflow:auto;
 }
 
 </style>
-
 </head>
 
 <body>
@@ -84,12 +93,24 @@ text-align:left;
 <button onclick="sendAction('scissors')">✂ Scissors</button>
 <button onclick="sendAction('gun')">💥 Gun</button>
 
-<h3>HP</h3>
+<h3>Your HP</h3>
 <div id="hpDisplay"></div>
+
+<h3>Opponent HP</h3>
+<div id="enemyHpDisplay"></div>
 
 <h3 id="gunStatus"></h3>
 
 <h3 id="log"></h3>
+
+<h3>Round History</h3>
+<div id="history"></div>
+
+<br>
+
+<button id="newGameBtn" onclick="newGame()" style="display:none;">
+New Game
+</button>
 
 <h2>Chat</h2>
 
@@ -121,17 +142,25 @@ let playerName=""
 let playerId=Math.random().toString(36).substring(2)
 
 let hp=10
+let enemyHp=10
 let gunCooldown=0
+let round=1
 
 function updateUI(){
 
 let hearts=""
+let enemyHearts=""
 
 for(let i=0;i<hp;i++){
 hearts+="❤️ "
 }
 
+for(let i=0;i<enemyHp;i++){
+enemyHearts+="❤️ "
+}
+
 document.getElementById("hpDisplay").innerText=hearts
+document.getElementById("enemyHpDisplay").innerText=enemyHearts
 
 if(gunCooldown>0){
 document.getElementById("gunStatus").innerText="Gun cooldown: "+gunCooldown
@@ -197,53 +226,76 @@ document.getElementById("enemyStatus").innerText="Next round"
 
 function resolveBattle(a,b){
 
-let log=a.name+" used "+a.action+" | "+b.name+" used "+b.action
-
 let playerAction=a.player===playerId?a.action:b.action
 let enemyAction=a.player===playerId?b.action:a.action
 
+let winner="Draw"
+
 if(playerAction==="gun" && gunCooldown>0){
-log="Gun is on cooldown!"
-}else{
-
-if(playerAction==="gun"){
-gunCooldown=3
+document.getElementById("log").innerText="Gun on cooldown"
+return
 }
 
-if(enemyAction==="gun" && playerAction!=="gun"){
-hp--
-log+=" — Gun wins"
-}
+if(playerAction==="gun") gunCooldown=3
 
-else if(playerAction==="rock" && enemyAction==="scissors"){
-log+=" — Rock wins"
+if(playerAction==="rock" && enemyAction==="scissors"){
+enemyHp--
+winner=playerName+" win"
 }
 
 else if(playerAction==="paper" && enemyAction==="rock"){
-log+=" — Paper wins"
+enemyHp--
+winner=playerName+" win"
 }
 
 else if(playerAction==="scissors" && enemyAction==="paper"){
-log+=" — Scissors wins"
+enemyHp--
+winner=playerName+" win"
 }
 
-else if(playerAction===enemyAction){
-log+=" — Draw"
-}
-
-else{
+else if(enemyAction==="gun" && playerAction!=="gun"){
 hp--
-log+=" — You lose round"
+winner="Opponent win"
 }
 
+else if(enemyAction==="rock" && playerAction==="scissors"){
+hp--
+winner="Opponent win"
 }
 
-if(gunCooldown>0)gunCooldown--
+else if(enemyAction==="paper" && playerAction==="rock"){
+hp--
+winner="Opponent win"
+}
 
-document.getElementById("log").innerText=log
+else if(enemyAction==="scissors" && playerAction==="paper"){
+hp--
+winner="Opponent win"
+}
+
+if(gunCooldown>0) gunCooldown--
+
+document.getElementById("log").innerText=
+playerAction+" vs "+enemyAction
+
+const historyText=
+"R"+round+"  "+winner+"  "+playerAction+" vs "+enemyAction
+
+const historyDiv=document.getElementById("history")
+
+historyDiv.innerHTML=
+historyText+"<br>"+historyDiv.innerHTML
+
+round++
 
 if(hp<=0){
 document.getElementById("status").innerText="💀 You lost"
+document.getElementById("newGameBtn").style.display="block"
+}
+
+if(enemyHp<=0){
+document.getElementById("status").innerText="🏆 You win!"
+document.getElementById("newGameBtn").style.display="block"
 }
 
 updateUI()
@@ -303,6 +355,23 @@ html+=`<div><b>${msg.name}:</b> ${msg.text}</div>`
 document.getElementById("chatBox").innerHTML=html
 
 })
+
+}
+
+window.newGame=function(){
+
+hp=10
+enemyHp=10
+gunCooldown=0
+round=1
+
+document.getElementById("history").innerHTML=""
+document.getElementById("log").innerText=""
+document.getElementById("status").innerText="New Game Started"
+
+document.getElementById("newGameBtn").style.display="none"
+
+updateUI()
 
 }
 
