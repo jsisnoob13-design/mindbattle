@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>宇宙胡扯对战 V3</title>
+<title>宇宙胡扯对战</title>
 
 <style>
 
@@ -58,8 +58,6 @@ overflow:auto;
 
 <h3 id="status">Waiting...</h3>
 
-<h3>Time Left: <span id="timer">10</span></h3>
-
 <div id="options"></div>
 
 <h3 id="log"></h3>
@@ -81,7 +79,7 @@ overflow:auto;
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const firebaseConfig={
 apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
@@ -142,13 +140,11 @@ const jokes=[
 ]
 
 let currentOptions=[]
-let timer=10
 let myChoice=null
 
 function random3(){
 
 let shuffled=[...items].sort(()=>0.5-Math.random())
-
 return shuffled.slice(0,3)
 
 }
@@ -174,44 +170,8 @@ function startRound(){
 
 currentOptions=random3()
 myChoice=null
-timer=10
 
 renderOptions()
-
-update(ref(db,"rooms/"+room),{
-options:currentOptions,
-round:round
-})
-
-startTimer()
-
-}
-
-function startTimer(){
-
-const interval=setInterval(()=>{
-
-timer--
-document.getElementById("timer").innerText=timer
-
-if(timer<=0){
-
-clearInterval(interval)
-
-if(myChoice===null){
-
-myChoice=Math.floor(Math.random()*3)
-
-set(ref(db,"rooms/"+room+"/actions/"+playerId),{
-choice:myChoice,
-name:playerName
-})
-
-}
-
-}
-
-},1000)
 
 }
 
