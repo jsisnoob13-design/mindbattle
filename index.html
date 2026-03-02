@@ -20,6 +20,18 @@ cursor:pointer;
 
 #log{
 margin-top:20px;
+font-size:18px;
+}
+
+.bar{
+height:20px;
+background:red;
+margin:auto;
+width:200px;
+}
+
+.energy{
+background:orange;
 }
 </style>
 
@@ -41,24 +53,27 @@ margin-top:20px;
 
 <h3 id="status">Waiting...</h3>
 
-<h3>Your HP: <span id="hp">10</span></h3>
-<h3>Your Energy: <span id="energy">2</span></h3>
+<h3>HP</h3>
+<div class="bar" id="hpbar"></div>
+
+<h3>Energy</h3>
+<div class="bar energy" id="energybar"></div>
 
 <div id="log"></div>
 
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
 const firebaseConfig = {
-apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-authDomain: "mindbattle-f00a3.firebaseapp.com",
-databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-projectId: "mindbattle-f00a3",
-storageBucket: "mindbattle-f00a3.firebasestorage.app",
-messagingSenderId: "286675354503",
-appId: "1:286675354503:web:00a87613f420cd07a30922"
+apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+authDomain:"mindbattle-f00a3.firebaseapp.com",
+databaseURL:"https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+projectId:"mindbattle-f00a3",
+storageBucket:"mindbattle-f00a3.firebasestorage.app",
+messagingSenderId:"286675354503",
+appId:"1:286675354503:web:00a87613f420cd07a30922"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -67,13 +82,13 @@ const db = getDatabase(app);
 let room="";
 let playerId=Math.random().toString(36).substring(2);
 
-let hp=10;
-let energy=2;
+let hp=10
+let energy=2
 
 function updateUI(){
 
-document.getElementById("hp").innerText=hp
-document.getElementById("energy").innerText=energy
+document.getElementById("hpbar").style.width=(hp*20)+"px"
+document.getElementById("energybar").style.width=(energy*20)+"px"
 
 }
 
@@ -91,14 +106,14 @@ const data=snapshot.val()
 
 if(!data)return
 
-let actions=Object.values(data)
+let players=Object.values(data)
 
-if(actions.length<2)return
+if(players.length<2)return
 
-let a=actions[actions.length-2]
-let b=actions[actions.length-1]
+let p1=players[0]
+let p2=players[1]
 
-resolveBattle(a.action,b.action)
+resolveBattle(p1.action,p2.action)
 
 })
 
@@ -110,42 +125,45 @@ let log=""
 
 if(a=="attack" && b=="charge"){
 log="Attack hits charging enemy!"
+hp-=2
 }
 
-if(a=="attack" && b=="defend"){
+else if(a=="attack" && b=="defend"){
 log="Attack blocked!"
 }
 
-if(a=="charge"){
+else if(a=="charge"){
 energy+=1
 log="You charged energy"
 }
 
-if(a=="power"){
+else if(a=="power"){
 
 if(energy>=2){
 energy-=2
-log="Power attack unleashed!"
+hp-=4
+log="Power attack!"
 }else{
 log="Not enough energy"
 }
 
 }
 
-document.getElementById("log").innerText=log
-
 updateUI()
 
+document.getElementById("log").innerText=log
+
 if(hp<=0){
-document.getElementById("status").innerText="You Lost!"
+
+document.getElementById("status").innerText="💀 You Lost"
+
 }
 
 }
 
 window.sendAction=function(action){
 
-push(ref(db,"rooms/"+room),{
-player:playerId,
+set(ref(db,"rooms/"+room+"/"+playerId),{
 action:action
 })
 
@@ -156,5 +174,4 @@ updateUI()
 </script>
 
 </body>
-
 </html>
