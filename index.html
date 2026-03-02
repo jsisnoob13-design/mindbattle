@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Mind Battle</title>
+<title>宇宙胡扯对战</title>
 
 <style>
 
@@ -13,16 +13,15 @@ color:white;
 }
 
 button{
-padding:10px;
-margin:6px;
-font-size:16px;
+padding:8px;
+margin:5px;
+font-size:14px;
 cursor:pointer;
 }
 
-.rules{
-width:420px;
+#actions{
+width:400px;
 margin:auto;
-text-align:left;
 }
 
 #chatBox{
@@ -49,32 +48,7 @@ overflow:auto;
 
 <body>
 
-<h1>Mind Battle</h1>
-
-<div class="rules">
-
-<b>How to Play</b>
-
-<ul>
-<li>Both players secretly choose an action.</li>
-<li>Actions reveal at the same time.</li>
-<li>Winner removes one ❤️ from opponent.</li>
-<li>First player to lose all hearts loses.</li>
-</ul>
-
-<b>Actions</b>
-
-<ul>
-<li>🪨 Rock beats ✂ Scissors</li>
-<li>✂ Scissors beats 📄 Paper</li>
-<li>📄 Paper beats 🪨 Rock</li>
-<li>💥 Gun beats everything</li>
-<li>Gun has a 3 round cooldown</li>
-</ul>
-
-</div>
-
-<br>
+<h1>宇宙胡扯对战</h1>
 
 <input id="name" placeholder="Your name">
 
@@ -84,14 +58,6 @@ overflow:auto;
 <button onclick="joinRoom()">Join Room</button>
 
 <h3 id="status">Waiting...</h3>
-<h3 id="enemyStatus"></h3>
-
-<br>
-
-<button onclick="sendAction('rock')">🪨 Rock</button>
-<button onclick="sendAction('paper')">📄 Paper</button>
-<button onclick="sendAction('scissors')">✂ Scissors</button>
-<button onclick="sendAction('gun')">💥 Gun</button>
 
 <h3>Your HP</h3>
 <div id="hpDisplay"></div>
@@ -99,7 +65,9 @@ overflow:auto;
 <h3>Opponent HP</h3>
 <div id="enemyHpDisplay"></div>
 
-<h3 id="gunStatus"></h3>
+<br>
+
+<div id="actions"></div>
 
 <h3 id="log"></h3>
 
@@ -108,9 +76,7 @@ overflow:auto;
 
 <br>
 
-<button id="newGameBtn" onclick="newGame()" style="display:none;">
-New Game
-</button>
+<button onclick="newGame()">New Game</button>
 
 <h2>Chat</h2>
 
@@ -137,36 +103,49 @@ appId:"1:286675354503:web:00a87613f420cd07a30922"
 const app=initializeApp(firebaseConfig)
 const db=getDatabase(app)
 
+const items=[
+"榴莲","拖鞋","老板","外星人","WiFi","程序员",
+"咖啡","猫","辣椒","AI","deadline","熊猫"
+]
+
+const jokes=[
+"因为宇宙运行规律如此",
+"因为程序员没有睡觉",
+"因为老板今天心情不好",
+"因为WiFi突然断线",
+"因为猫踩了路由器",
+"因为熊猫太可爱",
+"因为deadline来了",
+"因为AI升级了",
+"因为拖鞋是亚洲神器",
+"因为榴莲太臭了"
+]
+
 let room=""
 let playerName=""
 let playerId=Math.random().toString(36).substring(2)
 
 let hp=10
 let enemyHp=10
-let gunCooldown=0
 let round=1
 
-function updateUI(){
-
-let hearts=""
-let enemyHearts=""
-
-for(let i=0;i<hp;i++){
-hearts+="❤️ "
+function randomJoke(){
+return jokes[Math.floor(Math.random()*jokes.length)]
 }
 
-for(let i=0;i<enemyHp;i++){
-enemyHearts+="❤️ "
-}
+function generateButtons(){
 
-document.getElementById("hpDisplay").innerText=hearts
-document.getElementById("enemyHpDisplay").innerText=enemyHearts
+const container=document.getElementById("actions")
 
-if(gunCooldown>0){
-document.getElementById("gunStatus").innerText="Gun cooldown: "+gunCooldown
-}else{
-document.getElementById("gunStatus").innerText="Gun ready"
-}
+items.forEach((item,i)=>{
+
+let btn=document.createElement("button")
+btn.innerText=item
+btn.onclick=()=>sendAction(i)
+
+container.appendChild(btn)
+
+})
 
 }
 
@@ -189,36 +168,18 @@ const actionsRef=ref(db,"rooms/"+room+"/actions")
 onValue(actionsRef,(snapshot)=>{
 
 const data=snapshot.val()
-
 if(!data)return
 
 const players=Object.keys(data)
 
-if(players.length===1){
-
-if(players[0]!==playerId){
-document.getElementById("enemyStatus").innerText="Opponent has chosen!"
-}
-
-return
-}
-
 if(players.length<2)return
-
-document.getElementById("enemyStatus").innerText="⚔ Reveal!"
 
 const a=data[players[0]]
 const b=data[players[1]]
 
-setTimeout(()=>{
-
 resolveBattle(a,b)
 
 remove(actionsRef)
-
-document.getElementById("enemyStatus").innerText="Next round"
-
-},1000)
 
 })
 
@@ -226,90 +187,51 @@ document.getElementById("enemyStatus").innerText="Next round"
 
 function resolveBattle(a,b){
 
-let playerAction=a.player===playerId?a.action:b.action
-let enemyAction=a.player===playerId?b.action:a.action
+let pIndex=a.player===playerId?a.action:b.action
+let eIndex=a.player===playerId?b.action:a.action
+
+let diff=(pIndex-eIndex+items.length)%items.length
 
 let winner="Draw"
 
-if(playerAction==="gun" && gunCooldown>0){
-document.getElementById("log").innerText="Gun on cooldown"
-return
+if(diff===0){
+winner="Draw"
 }
 
-if(playerAction==="gun") gunCooldown=3
-
-if(playerAction==="rock" && enemyAction==="scissors"){
+else if(diff<=5){
 enemyHp--
 winner=playerName+" win"
 }
 
-else if(playerAction==="paper" && enemyAction==="rock"){
-enemyHp--
-winner=playerName+" win"
-}
-
-else if(playerAction==="scissors" && enemyAction==="paper"){
-enemyHp--
-winner=playerName+" win"
-}
-
-else if(enemyAction==="gun" && playerAction!=="gun"){
+else{
 hp--
 winner="Opponent win"
 }
 
-else if(enemyAction==="rock" && playerAction==="scissors"){
-hp--
-winner="Opponent win"
-}
+let joke=randomJoke()
 
-else if(enemyAction==="paper" && playerAction==="rock"){
-hp--
-winner="Opponent win"
-}
+let resultText=
 
-else if(enemyAction==="scissors" && playerAction==="paper"){
-hp--
-winner="Opponent win"
-}
+items[pIndex]+" vs "+items[eIndex]+
+"\n"+winner+
+"\n"+joke
 
-if(gunCooldown>0) gunCooldown--
-
-document.getElementById("log").innerText=
-playerAction+" vs "+enemyAction
+document.getElementById("log").innerText=resultText
 
 const historyText=
-"R"+round+"  "+winner+"  "+playerAction+" vs "+enemyAction
+"R"+round+" "+items[pIndex]+" vs "+items[eIndex]+" → "+winner
 
 const historyDiv=document.getElementById("history")
 
-historyDiv.innerHTML=
-historyText+"<br>"+historyDiv.innerHTML
+historyDiv.innerHTML+=historyText+"<br>"
 
 round++
-
-if(hp<=0){
-document.getElementById("status").innerText="💀 You lost"
-document.getElementById("newGameBtn").style.display="block"
-}
-
-if(enemyHp<=0){
-document.getElementById("status").innerText="🏆 You win!"
-document.getElementById("newGameBtn").style.display="block"
-}
 
 updateUI()
 
 }
 
 window.sendAction=function(action){
-
-if(action==="gun" && gunCooldown>0){
-alert("Gun on cooldown")
-return
-}
-
-document.getElementById("enemyStatus").innerText="Waiting for opponent..."
 
 set(ref(db,"rooms/"+room+"/actions/"+playerId),{
 
@@ -318,6 +240,41 @@ player:playerId,
 action:action
 
 })
+
+}
+
+function updateUI(){
+
+let hearts=""
+let enemyHearts=""
+
+for(let i=0;i<hp;i++) hearts+="❤️ "
+for(let i=0;i<enemyHp;i++) enemyHearts+="❤️ "
+
+document.getElementById("hpDisplay").innerText=hearts
+document.getElementById("enemyHpDisplay").innerText=enemyHearts
+
+if(hp<=0){
+document.getElementById("status").innerText="💀 You lost"
+}
+
+if(enemyHp<=0){
+document.getElementById("status").innerText="🏆 You win"
+}
+
+}
+
+window.newGame=function(){
+
+hp=10
+enemyHp=10
+round=1
+
+document.getElementById("history").innerHTML=""
+document.getElementById("log").innerText=""
+document.getElementById("status").innerText="New Game"
+
+updateUI()
 
 }
 
@@ -343,13 +300,16 @@ const chatRef=ref(db,"rooms/"+room+"/chat")
 onValue(chatRef,(snapshot)=>{
 
 const data=snapshot.val()
-
 if(!data)return
 
 let html=""
 
 Object.values(data).forEach(msg=>{
-html+=`<div><b>${msg.name}:</b> ${msg.text}</div>`
+
+let color=msg.name===playerName?"#4CAF50":"#00BFFF"
+
+html+=`<div style="color:${color}"><b>${msg.name}:</b> ${msg.text}</div>`
+
 })
 
 document.getElementById("chatBox").innerHTML=html
@@ -358,23 +318,15 @@ document.getElementById("chatBox").innerHTML=html
 
 }
 
-window.newGame=function(){
+document.getElementById("chatInput").addEventListener("keypress",function(e){
 
-hp=10
-enemyHp=10
-gunCooldown=0
-round=1
-
-document.getElementById("history").innerHTML=""
-document.getElementById("log").innerText=""
-document.getElementById("status").innerText="New Game Started"
-
-document.getElementById("newGameBtn").style.display="none"
-
-updateUI()
-
+if(e.key==="Enter"){
+sendChat()
 }
 
+})
+
+generateButtons()
 updateUI()
 
 </script>
