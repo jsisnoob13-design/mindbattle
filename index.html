@@ -1,321 +1,37 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Wild Ones PvP</title>
+const player1 = { name: "Player 1", combo: 0, health: 100, inDomain: false };
+const player2 = { name: "Player 2", combo: 0, health: 100, inDomain: false };
 
-<style>
+function handleHit(attacker, defender) {
+    if (attacker.inDomain) {
+        defender.health -= 20; // Extra damage inside domain
+        console.log(`${attacker.name} lands a Sure-Hit attack!`);
+    } else {
+        defender.health -= 10;
+        attacker.combo += 1;
+        defender.combo = 0; // Reset defender's combo because they got hit
+        
+        console.log(`${attacker.name} combo: ${attacker.combo}`);
 
-body{
-background:#111;
-color:white;
-font-family:Arial;
-text-align:center;
+        if (attacker.combo === 3) {
+            triggerDomainExpansion(attacker, defender);
+        }
+    }
 }
 
-canvas{
-background:#222;
-border:2px solid white;
+function triggerDomainExpansion(attacker, defender) {
+    attacker.combo = 0; // Reset after trigger
+    attacker.inDomain = true;
+    defender.inDomain = true;
+    
+    // Visual Change (Logic for your GitHub/Web game)
+    document.body.style.backgroundColor = "black"; 
+    alert(`DOMAIN EXPANSION: ${attacker.name} traps ${defender.name}!`);
+
+    // End domain after 10 seconds
+    setTimeout(() => {
+        attacker.inDomain = false;
+        defender.inDomain = false;
+        document.body.style.backgroundColor = "white";
+        console.log("Domain collapsed.");
+    }, 10000);
 }
-
-#chatBox{
-height:150px;
-width:320px;
-overflow:auto;
-border:1px solid white;
-margin:auto;
-padding:8px;
-}
-
-</style>
-</head>
-
-<body>
-
-<h2>Wild Ones PvP</h2>
-
-<input id="name" placeholder="name">
-<input id="room" placeholder="room">
-
-<button onclick="join()">Join</button>
-
-<br><br>
-
-<canvas id="game" width="800" height="400"></canvas>
-
-<br>
-
-Angle
-<input id="angle" type="range" min="10" max="80" value="45">
-
-Power
-<input id="power" type="range" min="4" max="12" value="8">
-
-<button onclick="shoot()">Throw</button>
-
-<h3 id="hp"></h3>
-
-<h2>Chat</h2>
-
-<div id="chatBox"></div>
-
-<input id="chatInput" placeholder="message">
-
-<script type="module">
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
-
-const firebaseConfig = {
-
-apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-authDomain:"mindbattle-f00a3.firebaseapp.com",
-databaseURL:"https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-projectId:"mindbattle-f00a3",
-storageBucket:"mindbattle-f00a3.firebasestorage.app",
-messagingSenderId:"286675354503",
-appId:"1:286675354503:web:00a87613f420cd07a30922"
-
-}
-
-const app=initializeApp(firebaseConfig)
-const db=getDatabase(app)
-
-let id=Math.random().toString(36).substring(2)
-
-let room=""
-let name=""
-
-const canvas=document.getElementById("game")
-const ctx=canvas.getContext("2d")
-
-let players={}
-let bullets=[]
-
-const gravity=0.25
-
-const platforms=[
-{x:0,y:360,w:800,h:40},
-{x:150,y:300,w:150,h:10},
-{x:500,y:250,w:150,h:10}
-]
-
-document.addEventListener("keydown",e=>{
-
-let p=players[id]
-
-if(!p)return
-
-if(e.key==="a") p.x-=4
-if(e.key==="d") p.x+=4
-if(e.key==="w") p.vy=-6
-
-})
-
-function join(){
-
-name=document.getElementById("name").value
-room=document.getElementById("room").value
-
-set(ref(db,"rooms/"+room+"/players/"+id),{
-
-name:name,
-x:100,
-y:100,
-vy:0,
-hp:10
-
-})
-
-listen()
-
-}
-
-function listen(){
-
-onValue(ref(db,"rooms/"+room),(snap)=>{
-
-const data=snap.val()
-
-if(!data)return
-
-players=data.players||{}
-
-})
-
-}
-
-function shoot(){
-
-let p=players[id]
-
-if(!p)return
-
-let angle=document.getElementById("angle").value*Math.PI/180
-let power=document.getElementById("power").value
-
-bullets.push({
-
-x:p.x,
-y:p.y,
-vx:Math.cos(angle)*power,
-vy:-Math.sin(angle)*power,
-owner:id
-
-})
-
-}
-
-function physics(){
-
-for(let pid in players){
-
-let p=players[pid]
-
-p.vy+=gravity
-p.y+=p.vy
-
-if(p.y>340){
-
-p.y=340
-p.vy=0
-
-}
-
-}
-
-bullets.forEach(b=>{
-
-b.vy+=gravity
-
-b.x+=b.vx
-b.y+=b.vy
-
-for(let pid in players){
-
-if(pid===b.owner)continue
-
-let p=players[pid]
-
-if(Math.abs(b.x-p.x)<15 && Math.abs(b.y-p.y)<15){
-
-p.hp--
-
-b.dead=true
-
-}
-
-}
-
-})
-
-bullets=bullets.filter(b=>!b.dead)
-
-}
-
-function draw(){
-
-ctx.clearRect(0,0,800,400)
-
-ctx.fillStyle="#666"
-
-platforms.forEach(pl=>{
-
-ctx.fillRect(pl.x,pl.y,pl.w,pl.h)
-
-})
-
-for(let pid in players){
-
-let p=players[pid]
-
-ctx.fillStyle=pid===id?"#00ff88":"#4da6ff"
-
-ctx.beginPath()
-ctx.arc(p.x,p.y,12,0,Math.PI*2)
-ctx.fill()
-
-ctx.fillText(p.name,p.x-10,p.y-20)
-
-}
-
-ctx.fillStyle="yellow"
-
-bullets.forEach(b=>{
-
-ctx.beginPath()
-ctx.arc(b.x,b.y,5,0,Math.PI*2)
-ctx.fill()
-
-})
-
-}
-
-function hpUI(){
-
-let text=""
-
-for(let pid in players){
-
-let p=players[pid]
-
-text+=p.name+" ❤️"+p.hp+" | "
-
-}
-
-document.getElementById("hp").innerText=text
-
-}
-
-function loop(){
-
-physics()
-draw()
-hpUI()
-
-requestAnimationFrame(loop)
-
-}
-
-loop()
-
-document.getElementById("chatInput").addEventListener("keydown",e=>{
-
-if(e.key==="Enter"){
-
-set(ref(db,"rooms/"+room+"/chat/"+Date.now()),{
-
-name:name,
-text:e.target.value
-
-})
-
-e.target.value=""
-
-}
-
-})
-
-onValue(ref(db,"rooms/"+room+"/chat"),snap=>{
-
-const data=snap.val()
-
-if(!data)return
-
-let html=""
-
-Object.values(data).forEach(m=>{
-
-let color=m.name===name?"#00ff88":"#4da6ff"
-
-html+=`<div style="color:${color}"><b>${m.name}:</b> ${m.text}</div>`
-
-})
-
-document.getElementById("chatBox").innerHTML=html
-
-})
-
-</script>
-
-</body>
-</html>
