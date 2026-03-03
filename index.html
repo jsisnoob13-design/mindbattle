@@ -19,18 +19,17 @@ border:2px solid white;
 }
 
 button{
-padding:10px;
-margin:5px;
-font-size:16px;
+padding:8px;
+margin:4px;
 }
 
 #chatBox{
-height:160px;
+height:150px;
 width:320px;
 overflow:auto;
 border:1px solid white;
 margin:auto;
-padding:10px;
+padding:8px;
 }
 
 </style>
@@ -39,28 +38,16 @@ padding:10px;
 
 <body>
 
-<h1>Emoji Wild Ones PvP</h1>
+<h2>Emoji Wild Ones PvP</h2>
 
-<input id="name" placeholder="Your name">
-<input id="room" placeholder="Room">
+<input id="name" placeholder="name">
+<input id="room" placeholder="room">
 
-<button onclick="joinRoom()">Join</button>
+<button onclick="join()">Join</button>
 
 <br><br>
 
 <canvas id="game" width="800" height="400"></canvas>
-
-<div id="domainUI" style="display:none">
-
-<h2>⚔ DOMAIN MODE</h2>
-
-<button onclick="domainAttack('punch')">👊 Punch</button>
-<button onclick="domainAttack('kick')">🦵 Kick</button>
-<button onclick="domainAttack('block')">🛡 Block</button>
-
-<p id="domainTimer"></p>
-
-</div>
 
 <br>
 
@@ -68,15 +55,11 @@ Angle
 <input id="angle" type="range" min="10" max="80" value="45">
 
 Power
-<input id="power" type="range" min="2" max="12" value="6">
+<input id="power" type="range" min="4" max="12" value="8">
 
-<button onclick="shoot()">Throw 🪨</button>
+<button onclick="shoot()">Throw</button>
 
 <h3 id="hp"></h3>
-
-<h3 id="result"></h3>
-
-<button onclick="restartGame()">Restart</button>
 
 <h2>Chat</h2>
 
@@ -107,148 +90,179 @@ const db = getDatabase(app)
 let playerId = Math.random().toString(36).substring(2)
 
 let room=""
-let playerName=""
+let name=""
 
-let combo=0
-let hp=10
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
 
-function joinRoom(){
+let players={}
+let projectiles=[]
 
-playerName=document.getElementById("name").value
+const gravity=0.25
+
+const platforms=[
+{x:0,y:360,w:800,h:40},
+{x:150,y:300,w:150,h:10},
+{x:500,y:250,w:150,h:10}
+]
+
+function join(){
+
+name=document.getElementById("name").value
 room=document.getElementById("room").value
 
 set(ref(db,"rooms/"+room+"/players/"+playerId),{
 
-name:playerName,
-hp:10,
-combo:0
+name:name,
+x:100,
+y:100,
+hp:10
 
 })
 
-listenRoom()
+listen()
 
 }
 
-function listenRoom(){
+function listen(){
 
-onValue(ref(db,"rooms/"+room),(snapshot)=>{
+onValue(ref(db,"rooms/"+room),(snap)=>{
 
-const data=snapshot.val()
+const data=snap.val()
 
-if(!data) return
+if(!data)return
 
-drawPlayers(data)
-
-if(data.domain && data.domain.active){
-
-enterDomain(data.domain.start)
-
-}
+players=data.players||{}
 
 })
-
-}
-
-function drawPlayers(data){
-
-let text=""
-
-Object.values(data.players||{}).forEach(p=>{
-
-text+=p.name+" HP:"+p.hp+" | "
-
-})
-
-document.getElementById("hp").innerText=text
 
 }
 
 function shoot(){
 
-set(ref(db,"rooms/"+room+"/shots/"+Date.now()),{
+const angle=document.getElementById("angle").value*Math.PI/180
+const power=document.getElementById("power").value
 
-player:playerName
+const p=players[playerId]
 
-})
+if(!p)return
 
-combo++
+projectiles.push({
 
-if(combo>=3){
-
-activateDomain()
-
-combo=0
-
-}
-
-}
-
-function activateDomain(){
-
-set(ref(db,"rooms/"+room+"/domain"),{
-
-active:true,
-start:Date.now()
+x:p.x,
+y:p.y,
+vx:Math.cos(angle)*power,
+vy:-Math.sin(angle)*power,
+owner:playerId
 
 })
 
 }
 
-function enterDomain(start){
+function physics(){
 
-document.getElementById("domainUI").style.display="block"
+projectiles.forEach(p=>{
 
-startDomainTimer(start)
+p.vy+=gravity
+
+p.x+=p.vx
+p.y+=p.vy
+
+if(p.y>400){
+
+p.dead=true
 
 }
 
-function startDomainTimer(start){
+for(let id in players){
 
-let interval=setInterval(()=>{
+if(id===p.owner)continue
 
-let time=Math.floor((Date.now()-start)/1000)
+let pl=players[id]
 
-let remain=10-time
+if(Math.abs(p.x-pl.x)<20 && Math.abs(p.y-pl.y)<20){
 
-document.getElementById("domainTimer").innerText="Time: "+remain
+pl.hp--
 
-if(remain<=0){
+p.dead=true
 
-clearInterval(interval)
+}
 
-set(ref(db,"rooms/"+room+"/domain"),{
-
-active:false
+}
 
 })
 
-document.getElementById("domainUI").style.display="none"
+projectiles=projectiles.filter(p=>!p.dead)
 
 }
 
-},1000)
+function draw(){
+
+ctx.clearRect(0,0,800,400)
+
+ctx.fillStyle="#666"
+
+platforms.forEach(pl=>{
+
+ctx.fillRect(pl.x,pl.y,pl.w,pl.h)
+
+})
+
+for(let id in players){
+
+let p=players[id]
+
+ctx.fillStyle=id===playerId?"#00ff88":"#4da6ff"
+
+ctx.beginPath()
+ctx.arc(p.x,p.y,12,0,Math.PI*2)
+ctx.fill()
+
+ctx.fillText(p.name,p.x-10,p.y-20)
 
 }
 
-function domainAttack(type){
+ctx.fillStyle="yellow"
 
-set(ref(db,"rooms/"+room+"/domainAttack/"+Date.now()),{
+projectiles.forEach(p=>{
 
-player:playerName,
-type:type
+ctx.beginPath()
+ctx.arc(p.x,p.y,5,0,Math.PI*2)
+ctx.fill()
 
 })
 
 }
 
-function restartGame(){
+function updateHP(){
 
-hp=10
-combo=0
+let text=""
 
-document.getElementById("result").innerText=""
+for(let id in players){
+
+let p=players[id]
+
+text+=p.name+" ❤️"+p.hp+" | "
 
 }
+
+document.getElementById("hp").innerText=text
+
+}
+
+function gameLoop(){
+
+physics()
+
+draw()
+
+updateHP()
+
+requestAnimationFrame(gameLoop)
+
+}
+
+gameLoop()
 
 document.getElementById("chatInput").addEventListener("keydown",e=>{
 
@@ -256,7 +270,7 @@ if(e.key==="Enter"){
 
 set(ref(db,"rooms/"+room+"/chat/"+Date.now()),{
 
-name:playerName,
+name:name,
 text:e.target.value
 
 })
@@ -267,25 +281,23 @@ e.target.value=""
 
 })
 
-onValue(ref(db,"rooms/"+room+"/chat"),(snapshot)=>{
+onValue(ref(db,"rooms/"+room+"/chat"),snap=>{
 
-const data=snapshot.val()
+const data=snap.val()
 
-if(!data) return
+if(!data)return
 
 let html=""
 
-Object.values(data).forEach(msg=>{
+Object.values(data).forEach(m=>{
 
-let color=msg.name===playerName?"#00ff88":"#4da6ff"
+let color=m.name===name?"#00ff88":"#4da6ff"
 
-html+=`<div style="color:${color}"><b>${msg.name}:</b> ${msg.text}</div>`
+html+=`<div style="color:${color}"><b>${m.name}:</b> ${m.text}</div>`
 
 })
 
 document.getElementById("chatBox").innerHTML=html
-
-document.getElementById("chatBox").scrollTop=99999
 
 })
 
