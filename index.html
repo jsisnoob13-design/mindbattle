@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-
-<title>Emoji Wild Ones PvP</title>
+<title>Wild Ones PvP</title>
 
 <style>
 
@@ -18,11 +17,6 @@ background:#222;
 border:2px solid white;
 }
 
-button{
-padding:8px;
-margin:4px;
-}
-
 #chatBox{
 height:150px;
 width:320px;
@@ -33,12 +27,11 @@ padding:8px;
 }
 
 </style>
-
 </head>
 
 <body>
 
-<h2>Emoji Wild Ones PvP</h2>
+<h2>Wild Ones PvP</h2>
 
 <input id="name" placeholder="name">
 <input id="room" placeholder="room">
@@ -84,10 +77,10 @@ appId:"1:286675354503:web:00a87613f420cd07a30922"
 
 }
 
-const app = initializeApp(firebaseConfig)
-const db = getDatabase(app)
+const app=initializeApp(firebaseConfig)
+const db=getDatabase(app)
 
-let playerId = Math.random().toString(36).substring(2)
+let id=Math.random().toString(36).substring(2)
 
 let room=""
 let name=""
@@ -96,7 +89,7 @@ const canvas=document.getElementById("game")
 const ctx=canvas.getContext("2d")
 
 let players={}
-let projectiles=[]
+let bullets=[]
 
 const gravity=0.25
 
@@ -106,16 +99,29 @@ const platforms=[
 {x:500,y:250,w:150,h:10}
 ]
 
+document.addEventListener("keydown",e=>{
+
+let p=players[id]
+
+if(!p)return
+
+if(e.key==="a") p.x-=4
+if(e.key==="d") p.x+=4
+if(e.key==="w") p.vy=-6
+
+})
+
 function join(){
 
 name=document.getElementById("name").value
 room=document.getElementById("room").value
 
-set(ref(db,"rooms/"+room+"/players/"+playerId),{
+set(ref(db,"rooms/"+room+"/players/"+id),{
 
 name:name,
 x:100,
 y:100,
+vy:0,
 hp:10
 
 })
@@ -140,20 +146,20 @@ players=data.players||{}
 
 function shoot(){
 
-const angle=document.getElementById("angle").value*Math.PI/180
-const power=document.getElementById("power").value
-
-const p=players[playerId]
+let p=players[id]
 
 if(!p)return
 
-projectiles.push({
+let angle=document.getElementById("angle").value*Math.PI/180
+let power=document.getElementById("power").value
+
+bullets.push({
 
 x:p.x,
 y:p.y,
 vx:Math.cos(angle)*power,
 vy:-Math.sin(angle)*power,
-owner:playerId
+owner:id
 
 })
 
@@ -161,30 +167,40 @@ owner:playerId
 
 function physics(){
 
-projectiles.forEach(p=>{
+for(let pid in players){
+
+let p=players[pid]
 
 p.vy+=gravity
-
-p.x+=p.vx
 p.y+=p.vy
 
-if(p.y>400){
+if(p.y>340){
 
-p.dead=true
+p.y=340
+p.vy=0
 
 }
 
-for(let id in players){
+}
 
-if(id===p.owner)continue
+bullets.forEach(b=>{
 
-let pl=players[id]
+b.vy+=gravity
 
-if(Math.abs(p.x-pl.x)<20 && Math.abs(p.y-pl.y)<20){
+b.x+=b.vx
+b.y+=b.vy
 
-pl.hp--
+for(let pid in players){
 
-p.dead=true
+if(pid===b.owner)continue
+
+let p=players[pid]
+
+if(Math.abs(b.x-p.x)<15 && Math.abs(b.y-p.y)<15){
+
+p.hp--
+
+b.dead=true
 
 }
 
@@ -192,7 +208,7 @@ p.dead=true
 
 })
 
-projectiles=projectiles.filter(p=>!p.dead)
+bullets=bullets.filter(b=>!b.dead)
 
 }
 
@@ -208,11 +224,11 @@ ctx.fillRect(pl.x,pl.y,pl.w,pl.h)
 
 })
 
-for(let id in players){
+for(let pid in players){
 
-let p=players[id]
+let p=players[pid]
 
-ctx.fillStyle=id===playerId?"#00ff88":"#4da6ff"
+ctx.fillStyle=pid===id?"#00ff88":"#4da6ff"
 
 ctx.beginPath()
 ctx.arc(p.x,p.y,12,0,Math.PI*2)
@@ -224,23 +240,23 @@ ctx.fillText(p.name,p.x-10,p.y-20)
 
 ctx.fillStyle="yellow"
 
-projectiles.forEach(p=>{
+bullets.forEach(b=>{
 
 ctx.beginPath()
-ctx.arc(p.x,p.y,5,0,Math.PI*2)
+ctx.arc(b.x,b.y,5,0,Math.PI*2)
 ctx.fill()
 
 })
 
 }
 
-function updateHP(){
+function hpUI(){
 
 let text=""
 
-for(let id in players){
+for(let pid in players){
 
-let p=players[id]
+let p=players[pid]
 
 text+=p.name+" ❤️"+p.hp+" | "
 
@@ -250,19 +266,17 @@ document.getElementById("hp").innerText=text
 
 }
 
-function gameLoop(){
+function loop(){
 
 physics()
-
 draw()
+hpUI()
 
-updateHP()
-
-requestAnimationFrame(gameLoop)
+requestAnimationFrame(loop)
 
 }
 
-gameLoop()
+loop()
 
 document.getElementById("chatInput").addEventListener("keydown",e=>{
 
