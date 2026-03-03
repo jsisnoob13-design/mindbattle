@@ -1,26 +1,42 @@
 <!DOCTYPE html>
 <html>
 <head>
-
-<title>Emoji Toss PvP</title>
+<title>Mind Battle PvP</title>
 
 <style>
 
 body{
+font-family:Arial;
+text-align:center;
 background:#111;
 color:white;
-text-align:center;
-font-family:Arial;
-}
-
-canvas{
-background:#222;
-border:2px solid white;
 }
 
 button{
 padding:10px;
-margin:5px;
+margin:6px;
+font-size:16px;
+cursor:pointer;
+}
+
+#chatBox{
+height:150px;
+overflow:auto;
+border:1px solid white;
+width:320px;
+margin:auto;
+padding:10px;
+}
+
+.rules{
+width:420px;
+margin:auto;
+text-align:left;
+}
+
+#history{
+margin-top:15px;
+font-size:14px;
 }
 
 </style>
@@ -29,285 +45,313 @@ margin:5px;
 
 <body>
 
-<h2>Emoji Toss PvP</h2>
+<h1>Mind Battle PvP</h1>
+
+<div class="rules">
+
+<b>Rules</b>
+
+<ul>
+<li>Rock beats Scissors</li>
+<li>Scissors beats Paper</li>
+<li>Paper beats Rock</li>
+<li>Gun beats everything</li>
+<li>Gun vs Gun = Draw</li>
+<li>First to lose all hearts loses</li>
+</ul>
+
+</div>
+
+<br>
 
 <input id="name" placeholder="Your name">
-<input id="room" placeholder="Room code">
-<button onclick="joinRoom()">Join</button>
 
 <br><br>
 
-<canvas id="game" width="800" height="400"></canvas>
+<input id="room" placeholder="Room code">
+<button onclick="joinRoom()">Join Room</button>
+
+<h3 id="status">Waiting...</h3>
+
+<h3>HP</h3>
+
+<div id="myHP"></div>
+<div id="enemyHP"></div>
 
 <br>
 
-<button onclick="moveLeft()">←</button>
-<button onclick="moveRight()">→</button>
-<button onclick="jump()">Jump</button>
+<button onclick="sendAction('rock')">🪨 Rock</button>
+<button onclick="sendAction('paper')">📄 Paper</button>
+<button onclick="sendAction('scissors')">✂ Scissors</button>
+<button onclick="sendAction('gun')">💥 Gun</button>
 
-<br>
+<h3 id="result"></h3>
 
-Angle
-<input id="angle" type="range" min="10" max="80" value="45">
+<h2>Score</h2>
+<div id="score"></div>
 
-Power
-<input id="power" type="range" min="2" max="12" value="6">
+<h2>Round History</h2>
+<div id="history"></div>
 
-<button onclick="shoot()">Fire 🪨</button>
+<button onclick="restartGame()">Restart Match</button>
 
-<p id="hp"></p>
+<h2>Chat</h2>
+
+<div id="chatBox"></div>
+
+<input id="chatInput" placeholder="Type message">
 
 <script type="module">
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-const firebaseConfig = {
-
-apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-authDomain: "mindbattle-f00a3.firebaseapp.com",
-databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-projectId: "mindbattle-f00a3",
-storageBucket: "mindbattle-f00a3.firebasestorage.app",
-messagingSenderId: "286675354503",
-appId: "1:286675354503:web:00a87613f420cd07a30922"
-
+const firebaseConfig={
+apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+authDomain:"mindbattle-f00a3.firebaseapp.com",
+databaseURL:"https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+projectId:"mindbattle-f00a3",
+storageBucket:"mindbattle-f00a3.firebasestorage.app",
+messagingSenderId:"286675354503",
+appId:"1:286675354503:web:00a87613f420cd07a30922"
 }
 
-const app = initializeApp(firebaseConfig)
-const db = getDatabase(app)
+const app=initializeApp(firebaseConfig)
+const db=getDatabase(app)
 
-const canvas = document.getElementById("game")
-const ctx = canvas.getContext("2d")
+let room=""
+let playerName=""
+let playerId=Math.random().toString(36).substring(2)
 
-const gravity = 0.6
+let hp=10
+let enemyHP=10
 
-const playerWidth = 26
-const playerHeight = 26
-
-let playerId = Math.random().toString(36).substring(2)
-
-let room = ""
-let myName = ""
-
-let players = {}
-
-let projectile = null
-
-const platforms = [
-
-{x:0,y:350,w:800,h:50},
-
-{x:80,y:300,w:120,h:20},
-{x:250,y:260,w:120,h:20},
-{x:430,y:300,w:140,h:20},
-{x:640,y:270,w:120,h:20},
-
-{x:150,y:200,w:100,h:20},
-{x:350,y:180,w:120,h:20},
-{x:550,y:200,w:100,h:20},
-
-{x:320,y:120,w:140,h:20}
-
-]
-
-window.joinRoom = function(){
-
-myName = document.getElementById("name").value
-room = document.getElementById("room").value
-
-set(ref(db,"rooms/"+room+"/players/"+playerId),{
-
-name: myName,
-x: Math.random()*600+100,
-y:0,
-vy:0,
-hp:10
-
-})
-
-listenGame()
-
-}
-
-function listenGame(){
-
-onValue(ref(db,"rooms/"+room+"/players"),(snapshot)=>{
-
-players = snapshot.val() || {}
-
-})
-
-}
-
-function draw(){
-
-ctx.clearRect(0,0,800,400)
-
-drawPlatforms()
-
-Object.keys(players).forEach(id=>{
-
-updatePlayer(players[id])
-drawPlayer(players[id])
-
-})
-
-updateProjectile()
-
-drawHP()
-
-requestAnimationFrame(draw)
-
-}
-
-function drawPlatforms(){
-
-ctx.fillStyle="green"
-
-platforms.forEach(p=>{
-ctx.fillRect(p.x,p.y,p.w,p.h)
-})
-
-}
-
-function updatePlayer(p){
-
-p.vy += gravity
-p.y += p.vy
-
-platforms.forEach(pl=>{
-
-let bottom = p.y + playerHeight
-
-if(
-p.x > pl.x-20 &&
-p.x < pl.x + pl.w +20 &&
-bottom >= pl.y &&
-bottom <= pl.y + 12 &&
-p.vy >= 0
-){
-p.y = pl.y - playerHeight
-p.vy = 0
-}
-
-})
-
-}
-
-function drawPlayer(p){
-
-ctx.font="28px Arial"
-ctx.fillText("🐱",p.x,p.y+playerHeight)
-
-}
-
-window.moveLeft=function(){
-
-let p = players[playerId]
-p.x -= 20
-
-updateServer()
-
-}
-
-window.moveRight=function(){
-
-let p = players[playerId]
-p.x += 20
-
-updateServer()
-
-}
-
-window.jump=function(){
-
-let p = players[playerId]
-
-if(p.vy===0){
-p.vy=-12
-}
-
-updateServer()
-
-}
-
-window.shoot=function(){
-
-let p = players[playerId]
-
-let angle = document.getElementById("angle").value
-let power = document.getElementById("power").value
-
-let rad = angle*Math.PI/180
-
-projectile = {
-
-x:p.x,
-y:p.y,
-vx:Math.cos(rad)*power,
-vy:-Math.sin(rad)*power
-
-}
-
-}
-
-function updateProjectile(){
-
-if(!projectile) return
-
-ctx.font="20px Arial"
-ctx.fillText("🪨",projectile.x,projectile.y)
-
-projectile.x += projectile.vx
-projectile.y += projectile.vy
-
-projectile.vy += 0.35
-
-Object.keys(players).forEach(id=>{
-
-if(id===playerId) return
-
-let p = players[id]
-
-let dx = projectile.x - p.x
-let dy = projectile.y - p.y
-
-let dist = Math.sqrt(dx*dx+dy*dy)
-
-if(dist<25){
-
-p.hp--
-
-updateServer()
-
-projectile=null
-
-}
-
-})
-
-}
+let history=[]
+let score={}
 
 function drawHP(){
 
+let hearts=""
+for(let i=0;i<hp;i++) hearts+="❤️ "
+document.getElementById("myHP").innerText=playerName+": "+hearts
+
+let enemyHearts=""
+for(let i=0;i<enemyHP;i++) enemyHearts+="❤️ "
+document.getElementById("enemyHP").innerText="Opponent: "+enemyHearts
+
+}
+
+function drawHistory(){
+
 let text=""
 
-Object.values(players).forEach(p=>{
-text += p.name + " HP:" + p.hp + " | "
+history.forEach(r=>{
+text=r+"<br>"+text
 })
 
-document.getElementById("hp").innerText=text
+document.getElementById("history").innerHTML=text
 
 }
 
-function updateServer(){
+function drawScore(){
 
-set(ref(db,"rooms/"+room+"/players/"+playerId),players[playerId])
+let text=""
+
+for(let p in score){
+text+=p+" : "+score[p]+"<br>"
+}
+
+document.getElementById("score").innerHTML=text
 
 }
 
-draw()
+window.joinRoom=function(){
+
+playerName=document.getElementById("name").value
+room=document.getElementById("room").value
+
+document.getElementById("status").innerText="Joined "+room
+
+listenActions()
+listenChat()
+
+drawHP()
+
+}
+
+function resolveBattle(a,b){
+
+let p1=a
+let p2=b
+
+let winner="draw"
+
+if(p1.action==="gun" && p2.action!=="gun") winner=p1
+else if(p2.action==="gun" && p1.action!=="gun") winner=p2
+
+else if(p1.action==="rock" && p2.action==="scissors") winner=p1
+else if(p1.action==="scissors" && p2.action==="paper") winner=p1
+else if(p1.action==="paper" && p2.action==="rock") winner=p1
+
+else if(p2.action==="rock" && p1.action==="scissors") winner=p2
+else if(p2.action==="scissors" && p1.action==="paper") winner=p2
+else if(p2.action==="paper" && p1.action==="rock") winner=p2
+
+let roundText=""
+
+if(winner==="draw"){
+
+roundText="Draw - "+p1.action+" vs "+p2.action
+
+}else{
+
+if(winner.player===playerId){
+
+enemyHP--
+
+roundText="Round: "+playerName+" win ("+p1.action+" vs "+p2.action+")"
+
+}else{
+
+hp--
+
+roundText="Round: Opponent win ("+p1.action+" vs "+p2.action+")"
+
+}
+
+}
+
+history.push(roundText)
+
+drawHistory()
+drawHP()
+
+if(hp<=0){
+
+document.getElementById("result").innerText="💀 You Lose"
+
+if(!score["Opponent"]) score["Opponent"]=0
+score["Opponent"]++
+
+drawScore()
+
+}
+
+if(enemyHP<=0){
+
+document.getElementById("result").innerText="🎉 You Win"
+
+if(!score[playerName]) score[playerName]=0
+score[playerName]++
+
+drawScore()
+
+}
+
+}
+
+function listenActions(){
+
+const actionsRef=ref(db,"rooms/"+room+"/actions")
+
+onValue(actionsRef,(snapshot)=>{
+
+const data=snapshot.val()
+
+if(!data) return
+
+const players=Object.keys(data)
+
+if(players.length<2) return
+
+const a=data[players[0]]
+const b=data[players[1]]
+
+resolveBattle(a,b)
+
+remove(actionsRef)
+
+})
+
+}
+
+window.sendAction=function(action){
+
+set(ref(db,"rooms/"+room+"/actions/"+playerId),{
+
+player:playerId,
+name:playerName,
+action:action
+
+})
+
+}
+
+window.restartGame=function(){
+
+hp=10
+enemyHP=10
+history=[]
+
+document.getElementById("result").innerText=""
+
+drawHP()
+drawHistory()
+
+}
+
+window.sendChat=function(){
+
+const message=document.getElementById("chatInput").value
+
+set(ref(db,"rooms/"+room+"/chat/"+Date.now()),{
+
+name:playerName,
+text:message
+
+})
+
+document.getElementById("chatInput").value=""
+
+}
+
+document.getElementById("chatInput").addEventListener("keydown",function(e){
+
+if(e.key==="Enter"){
+
+e.preventDefault()
+sendChat()
+
+}
+
+})
+
+function listenChat(){
+
+const chatRef=ref(db,"rooms/"+room+"/chat")
+
+onValue(chatRef,(snapshot)=>{
+
+const data=snapshot.val()
+
+if(!data) return
+
+let html=""
+
+Object.values(data).forEach(msg=>{
+
+let color=msg.name===playerName?"#00ff88":"#4da6ff"
+
+html+=`<div style="color:${color}"><b>${msg.name}:</b> ${msg.text}</div>`
+
+})
+
+document.getElementById("chatBox").innerHTML=html
+document.getElementById("chatBox").scrollTop=99999
+
+})
+
+}
 
 </script>
 
