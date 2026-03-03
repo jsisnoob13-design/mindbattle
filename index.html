@@ -1,42 +1,36 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Mind Battle PvP</title>
+
+<title>Emoji Wild Ones PvP</title>
 
 <style>
 
 body{
-font-family:Arial;
-text-align:center;
 background:#111;
 color:white;
+font-family:Arial;
+text-align:center;
+}
+
+canvas{
+background:#222;
+border:2px solid white;
 }
 
 button{
 padding:10px;
-margin:6px;
+margin:5px;
 font-size:16px;
-cursor:pointer;
 }
 
 #chatBox{
-height:150px;
+height:160px;
+width:320px;
 overflow:auto;
 border:1px solid white;
-width:320px;
 margin:auto;
 padding:10px;
-}
-
-.rules{
-width:420px;
-margin:auto;
-text-align:left;
-}
-
-#history{
-margin-top:15px;
-font-size:14px;
 }
 
 </style>
@@ -45,68 +39,58 @@ font-size:14px;
 
 <body>
 
-<h1>Mind Battle PvP</h1>
+<h1>Emoji Wild Ones PvP</h1>
 
-<div class="rules">
+<input id="name" placeholder="Your name">
+<input id="room" placeholder="Room">
 
-<b>Rules</b>
+<button onclick="joinRoom()">Join</button>
 
-<ul>
-<li>Rock beats Scissors</li>
-<li>Scissors beats Paper</li>
-<li>Paper beats Rock</li>
-<li>Gun beats everything</li>
-<li>Gun vs Gun = Draw</li>
-<li>First to lose all hearts loses</li>
-</ul>
+<br><br>
+
+<canvas id="game" width="800" height="400"></canvas>
+
+<div id="domainUI" style="display:none">
+
+<h2>⚔ DOMAIN MODE</h2>
+
+<button onclick="domainAttack('punch')">👊 Punch</button>
+<button onclick="domainAttack('kick')">🦵 Kick</button>
+<button onclick="domainAttack('block')">🛡 Block</button>
+
+<p id="domainTimer"></p>
 
 </div>
 
 <br>
 
-<input id="name" placeholder="Your name">
+Angle
+<input id="angle" type="range" min="10" max="80" value="45">
 
-<br><br>
+Power
+<input id="power" type="range" min="2" max="12" value="6">
 
-<input id="room" placeholder="Room code">
-<button onclick="joinRoom()">Join Room</button>
+<button onclick="shoot()">Throw 🪨</button>
 
-<h3 id="status">Waiting...</h3>
-
-<h3>HP</h3>
-
-<div id="myHP"></div>
-<div id="enemyHP"></div>
-
-<br>
-
-<button onclick="sendAction('rock')">🪨 Rock</button>
-<button onclick="sendAction('paper')">📄 Paper</button>
-<button onclick="sendAction('scissors')">✂ Scissors</button>
-<button onclick="sendAction('gun')">💥 Gun</button>
+<h3 id="hp"></h3>
 
 <h3 id="result"></h3>
 
-<h2>Score</h2>
-<div id="score"></div>
-
-<h2>Round History</h2>
-<div id="history"></div>
-
-<button onclick="restartGame()">Restart Match</button>
+<button onclick="restartGame()">Restart</button>
 
 <h2>Chat</h2>
 
 <div id="chatBox"></div>
 
-<input id="chatInput" placeholder="Type message">
+<input id="chatInput" placeholder="message">
 
 <script type="module">
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
 
-const firebaseConfig={
+const firebaseConfig = {
+
 apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
 authDomain:"mindbattle-f00a3.firebaseapp.com",
 databaseURL:"https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -114,223 +98,176 @@ projectId:"mindbattle-f00a3",
 storageBucket:"mindbattle-f00a3.firebasestorage.app",
 messagingSenderId:"286675354503",
 appId:"1:286675354503:web:00a87613f420cd07a30922"
+
 }
 
-const app=initializeApp(firebaseConfig)
-const db=getDatabase(app)
+const app = initializeApp(firebaseConfig)
+const db = getDatabase(app)
+
+let playerId = Math.random().toString(36).substring(2)
 
 let room=""
 let playerName=""
-let playerId=Math.random().toString(36).substring(2)
 
+let combo=0
 let hp=10
-let enemyHP=10
 
-let history=[]
-let score={}
-
-function drawHP(){
-
-let hearts=""
-for(let i=0;i<hp;i++) hearts+="❤️ "
-document.getElementById("myHP").innerText=playerName+": "+hearts
-
-let enemyHearts=""
-for(let i=0;i<enemyHP;i++) enemyHearts+="❤️ "
-document.getElementById("enemyHP").innerText="Opponent: "+enemyHearts
-
-}
-
-function drawHistory(){
-
-let text=""
-
-history.forEach(r=>{
-text=r+"<br>"+text
-})
-
-document.getElementById("history").innerHTML=text
-
-}
-
-function drawScore(){
-
-let text=""
-
-for(let p in score){
-text+=p+" : "+score[p]+"<br>"
-}
-
-document.getElementById("score").innerHTML=text
-
-}
-
-window.joinRoom=function(){
+function joinRoom(){
 
 playerName=document.getElementById("name").value
 room=document.getElementById("room").value
 
-document.getElementById("status").innerText="Joined "+room
+set(ref(db,"rooms/"+room+"/players/"+playerId),{
 
-listenActions()
-listenChat()
+name:playerName,
+hp:10,
+combo:0
 
-drawHP()
+})
 
-}
-
-function resolveBattle(a,b){
-
-let p1=a
-let p2=b
-
-let winner="draw"
-
-if(p1.action==="gun" && p2.action!=="gun") winner=p1
-else if(p2.action==="gun" && p1.action!=="gun") winner=p2
-
-else if(p1.action==="rock" && p2.action==="scissors") winner=p1
-else if(p1.action==="scissors" && p2.action==="paper") winner=p1
-else if(p1.action==="paper" && p2.action==="rock") winner=p1
-
-else if(p2.action==="rock" && p1.action==="scissors") winner=p2
-else if(p2.action==="scissors" && p1.action==="paper") winner=p2
-else if(p2.action==="paper" && p1.action==="rock") winner=p2
-
-let roundText=""
-
-if(winner==="draw"){
-
-roundText="Draw - "+p1.action+" vs "+p2.action
-
-}else{
-
-if(winner.player===playerId){
-
-enemyHP--
-
-roundText="Round: "+playerName+" win ("+p1.action+" vs "+p2.action+")"
-
-}else{
-
-hp--
-
-roundText="Round: Opponent win ("+p1.action+" vs "+p2.action+")"
+listenRoom()
 
 }
 
-}
+function listenRoom(){
 
-history.push(roundText)
-
-drawHistory()
-drawHP()
-
-if(hp<=0){
-
-document.getElementById("result").innerText="💀 You Lose"
-
-if(!score["Opponent"]) score["Opponent"]=0
-score["Opponent"]++
-
-drawScore()
-
-}
-
-if(enemyHP<=0){
-
-document.getElementById("result").innerText="🎉 You Win"
-
-if(!score[playerName]) score[playerName]=0
-score[playerName]++
-
-drawScore()
-
-}
-
-}
-
-function listenActions(){
-
-const actionsRef=ref(db,"rooms/"+room+"/actions")
-
-onValue(actionsRef,(snapshot)=>{
+onValue(ref(db,"rooms/"+room),(snapshot)=>{
 
 const data=snapshot.val()
 
 if(!data) return
 
-const players=Object.keys(data)
+drawPlayers(data)
 
-if(players.length<2) return
+if(data.domain && data.domain.active){
 
-const a=data[players[0]]
-const b=data[players[1]]
+enterDomain(data.domain.start)
 
-resolveBattle(a,b)
-
-remove(actionsRef)
+}
 
 })
 
 }
 
-window.sendAction=function(action){
+function drawPlayers(data){
 
-set(ref(db,"rooms/"+room+"/actions/"+playerId),{
+let text=""
 
-player:playerId,
-name:playerName,
-action:action
+Object.values(data.players||{}).forEach(p=>{
+
+text+=p.name+" HP:"+p.hp+" | "
+
+})
+
+document.getElementById("hp").innerText=text
+
+}
+
+function shoot(){
+
+set(ref(db,"rooms/"+room+"/shots/"+Date.now()),{
+
+player:playerName
+
+})
+
+combo++
+
+if(combo>=3){
+
+activateDomain()
+
+combo=0
+
+}
+
+}
+
+function activateDomain(){
+
+set(ref(db,"rooms/"+room+"/domain"),{
+
+active:true,
+start:Date.now()
 
 })
 
 }
 
-window.restartGame=function(){
+function enterDomain(start){
+
+document.getElementById("domainUI").style.display="block"
+
+startDomainTimer(start)
+
+}
+
+function startDomainTimer(start){
+
+let interval=setInterval(()=>{
+
+let time=Math.floor((Date.now()-start)/1000)
+
+let remain=10-time
+
+document.getElementById("domainTimer").innerText="Time: "+remain
+
+if(remain<=0){
+
+clearInterval(interval)
+
+set(ref(db,"rooms/"+room+"/domain"),{
+
+active:false
+
+})
+
+document.getElementById("domainUI").style.display="none"
+
+}
+
+},1000)
+
+}
+
+function domainAttack(type){
+
+set(ref(db,"rooms/"+room+"/domainAttack/"+Date.now()),{
+
+player:playerName,
+type:type
+
+})
+
+}
+
+function restartGame(){
 
 hp=10
-enemyHP=10
-history=[]
+combo=0
 
 document.getElementById("result").innerText=""
 
-drawHP()
-drawHistory()
-
 }
 
-window.sendChat=function(){
+document.getElementById("chatInput").addEventListener("keydown",e=>{
 
-const message=document.getElementById("chatInput").value
+if(e.key==="Enter"){
 
 set(ref(db,"rooms/"+room+"/chat/"+Date.now()),{
 
 name:playerName,
-text:message
+text:e.target.value
 
 })
 
-document.getElementById("chatInput").value=""
-
-}
-
-document.getElementById("chatInput").addEventListener("keydown",function(e){
-
-if(e.key==="Enter"){
-
-e.preventDefault()
-sendChat()
+e.target.value=""
 
 }
 
 })
 
-function listenChat(){
-
-const chatRef=ref(db,"rooms/"+room+"/chat")
-
-onValue(chatRef,(snapshot)=>{
+onValue(ref(db,"rooms/"+room+"/chat"),(snapshot)=>{
 
 const data=snapshot.val()
 
@@ -347,11 +284,10 @@ html+=`<div style="color:${color}"><b>${msg.name}:</b> ${msg.text}</div>`
 })
 
 document.getElementById("chatBox").innerHTML=html
+
 document.getElementById("chatBox").scrollTop=99999
 
 })
-
-}
 
 </script>
 
