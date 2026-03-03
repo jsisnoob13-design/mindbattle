@@ -55,27 +55,27 @@ Power
 const canvas = document.getElementById("game")
 const ctx = canvas.getContext("2d")
 
-let player1={
+const gravity = 0.5
+
+let player1 = {
 x:100,
-y:100,
+y:50,
 vy:0,
 emoji:"🐱",
 hp:10
 }
 
-let player2={
+let player2 = {
 x:700,
-y:100,
+y:50,
 vy:0,
 emoji:"🐶",
 hp:10
 }
 
-let projectile=null
+let projectile = null
 
-const gravity=0.5
-
-const platforms=[
+const platforms = [
 
 {x:0,y:350,w:800,h:50},
 
@@ -126,50 +126,21 @@ function updatePlayer(p){
 p.vy += gravity
 p.y += p.vy
 
-let onGround = false
-
 platforms.forEach(pl=>{
 
-// 玩家脚的位置
 let feet = p.y
-
-// 玩家水平范围
 let left = p.x - 10
 let right = p.x + 10
 
-// 平台顶部
-let top = pl.y
-
-// 判断是否从上方落到平台
 if(
 right > pl.x &&
 left < pl.x + pl.w &&
-feet >= top &&
-feet <= top + 10 &&
+feet >= pl.y &&
+feet <= pl.y + 10 &&
 p.vy >= 0
 ){
-p.y = top
+p.y = pl.y
 p.vy = 0
-onGround = true
-}
-
-})
-
-}
-
-p.vy+=gravity
-p.y+=p.vy
-
-platforms.forEach(pl=>{
-
-if(
-p.x>pl.x-20 &&
-p.x<pl.x+pl.w &&
-p.y>pl.y-30 &&
-p.y<pl.y
-){
-p.y=pl.y
-p.vy=0
 }
 
 })
@@ -181,100 +152,97 @@ function drawPlayers(){
 ctx.font="30px Arial"
 
 ctx.fillText(player1.emoji,player1.x,player1.y)
-
 ctx.fillText(player2.emoji,player2.x,player2.y)
 
 }
 
 function shoot(){
 
-let angle=document.getElementById("angle").value
-let power=document.getElementById("power").value
+let angle = document.getElementById("angle").value
+let power = document.getElementById("power").value
 
-let rad=angle*Math.PI/180
+let rad = angle * Math.PI / 180
 
-projectile={
+projectile = {
 x:player1.x,
 y:player1.y,
-vx:Math.cos(rad)*power,
-vy:-Math.sin(rad)*power
+vx:Math.cos(rad) * power,
+vy:-Math.sin(rad) * power
 }
 
 }
 
 function updateProjectile(){
 
-if(!projectile)return
+if(!projectile) return
 
 ctx.font="20px Arial"
 ctx.fillText("🪨",projectile.x,projectile.y)
 
-projectile.x+=projectile.vx
-projectile.y+=projectile.vy
+projectile.x += projectile.vx
+projectile.y += projectile.vy
 
-projectile.vy+=0.2
+projectile.vy += 0.2
 
 platforms.forEach(p=>{
 
 if(
 projectile &&
-projectile.x>p.x &&
-projectile.x<p.x+p.w &&
-projectile.y>p.y &&
-projectile.y<p.y+p.h
+projectile.x > p.x &&
+projectile.x < p.x + p.w &&
+projectile.y > p.y &&
+projectile.y < p.y + p.h
 ){
-projectile=null
+projectile = null
 }
 
 })
 
-let dx=projectile?.x-player2.x
-let dy=projectile?.y-player2.y
+if(projectile){
 
-let dist=Math.sqrt(dx*dx+dy*dy)
+let dx = projectile.x - player2.x
+let dy = projectile.y - player2.y
+let dist = Math.sqrt(dx*dx + dy*dy)
 
-if(projectile && dist<25){
+if(dist < 25){
 
-player2.hp--
+player2.hp --
 
-projectile=null
+projectile = null
 
 alert("Hit!")
 
 }
 
-if(projectile && projectile.y>400){
-projectile=null
+}
+
+if(projectile && projectile.y > 400){
+projectile = null
 }
 
 }
 
 function moveLeft(){
-
-player1.x-=20
-
+player1.x -= 20
 }
 
 function moveRight(){
-
-player1.x+=20
-
+player1.x += 20
 }
 
 function jump(){
 
-if(player1.vy===0){
-player1.vy=-10
+if(player1.vy === 0){
+player1.vy = -10
 }
 
 }
 
 function drawHP(){
 
-document.getElementById("hp").innerText=
-
-"Player 🐱 HP: "+player1.hp+
-" | Enemy 🐶 HP: "+player2.hp
+document.getElementById("hp").innerText =
+"Player 🐱 HP: " + player1.hp +
+" | Enemy 🐶 HP: " + player2.hp
 
 }
 
