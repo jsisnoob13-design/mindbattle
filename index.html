@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Emoji Toss Prototype</title>
+
+<title>Emoji Toss PvP</title>
 
 <style>
 
@@ -18,8 +19,8 @@ border:2px solid white;
 }
 
 button{
-margin:5px;
 padding:10px;
+margin:5px;
 }
 
 </style>
@@ -28,7 +29,13 @@ padding:10px;
 
 <body>
 
-<h2>Emoji Toss Prototype</h2>
+<h2>Emoji Toss PvP</h2>
+
+<input id="name" placeholder="Your name">
+<input id="room" placeholder="Room code">
+<button onclick="joinRoom()">Join</button>
+
+<br><br>
 
 <canvas id="game" width="800" height="400"></canvas>
 
@@ -38,7 +45,7 @@ padding:10px;
 <button onclick="moveRight()">→</button>
 <button onclick="jump()">Jump</button>
 
-<br><br>
+<br>
 
 Angle
 <input id="angle" type="range" min="10" max="80" value="45">
@@ -46,11 +53,29 @@ Angle
 Power
 <input id="power" type="range" min="2" max="12" value="6">
 
-<button onclick="shoot()">FIRE 🪨</button>
+<button onclick="shoot()">Fire 🪨</button>
 
 <p id="hp"></p>
 
-<script>
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
+
+const firebaseConfig = {
+
+apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+authDomain: "mindbattle-f00a3.firebaseapp.com",
+databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+projectId: "mindbattle-f00a3",
+storageBucket: "mindbattle-f00a3.firebasestorage.app",
+messagingSenderId: "286675354503",
+appId: "1:286675354503:web:00a87613f420cd07a30922"
+
+}
+
+const app = initializeApp(firebaseConfig)
+const db = getDatabase(app)
 
 const canvas = document.getElementById("game")
 const ctx = canvas.getContext("2d")
@@ -60,23 +85,12 @@ const gravity = 0.6
 const playerWidth = 26
 const playerHeight = 26
 
-let player1 = {
-x:100,
-y:0,
-vx:0,
-vy:0,
-emoji:"🐱",
-hp:10
-}
+let playerId = Math.random().toString(36).substring(2)
 
-let player2 = {
-x:700,
-y:0,
-vx:0,
-vy:0,
-emoji:"🐶",
-hp:10
-}
+let room = ""
+let myName = ""
+
+let players = {}
 
 let projectile = null
 
@@ -97,16 +111,47 @@ const platforms = [
 
 ]
 
+window.joinRoom = function(){
+
+myName = document.getElementById("name").value
+room = document.getElementById("room").value
+
+set(ref(db,"rooms/"+room+"/players/"+playerId),{
+
+name: myName,
+x: Math.random()*600+100,
+y:0,
+vy:0,
+hp:10
+
+})
+
+listenGame()
+
+}
+
+function listenGame(){
+
+onValue(ref(db,"rooms/"+room+"/players"),(snapshot)=>{
+
+players = snapshot.val() || {}
+
+})
+
+}
+
 function draw(){
 
 ctx.clearRect(0,0,800,400)
 
 drawPlatforms()
 
-updatePlayer(player1)
-updatePlayer(player2)
+Object.keys(players).forEach(id=>{
 
-drawPlayers()
+updatePlayer(players[id])
+drawPlayer(players[id])
+
+})
 
 updateProjectile()
 
@@ -131,58 +176,78 @@ function updatePlayer(p){
 p.vy += gravity
 p.y += p.vy
 
-let onGround = false
-
 platforms.forEach(pl=>{
 
-let playerBottom = p.y + playerHeight
-let playerTop = p.y
-let playerLeft = p.x
-let playerRight = p.x + playerWidth
-
-let platformTop = pl.y
+let bottom = p.y + playerHeight
 
 if(
-playerRight > pl.x &&
-playerLeft < pl.x + pl.w &&
-playerBottom >= platformTop &&
-playerBottom <= platformTop + 15 &&
+p.x > pl.x-20 &&
+p.x < pl.x + pl.w +20 &&
+bottom >= pl.y &&
+bottom <= pl.y + 12 &&
 p.vy >= 0
 ){
-p.y = platformTop - playerHeight
+p.y = pl.y - playerHeight
 p.vy = 0
-onGround = true
 }
 
 })
 
-if(p.y > 500){
-p.y = 0
 }
 
-}
-
-function drawPlayers(){
+function drawPlayer(p){
 
 ctx.font="28px Arial"
-
-ctx.fillText(player1.emoji,player1.x,player1.y + playerHeight)
-ctx.fillText(player2.emoji,player2.x,player2.y + playerHeight)
+ctx.fillText("🐱",p.x,p.y+playerHeight)
 
 }
 
-function shoot(){
+window.moveLeft=function(){
+
+let p = players[playerId]
+p.x -= 20
+
+updateServer()
+
+}
+
+window.moveRight=function(){
+
+let p = players[playerId]
+p.x += 20
+
+updateServer()
+
+}
+
+window.jump=function(){
+
+let p = players[playerId]
+
+if(p.vy===0){
+p.vy=-12
+}
+
+updateServer()
+
+}
+
+window.shoot=function(){
+
+let p = players[playerId]
 
 let angle = document.getElementById("angle").value
 let power = document.getElementById("power").value
 
-let rad = angle * Math.PI / 180
+let rad = angle*Math.PI/180
 
 projectile = {
-x:player1.x + playerWidth/2,
-y:player1.y,
-vx:Math.cos(rad) * power,
-vy:-Math.sin(rad) * power
+
+x:p.x,
+y:p.y,
+vx:Math.cos(rad)*power,
+vy:-Math.sin(rad)*power
+
 }
 
 }
@@ -199,70 +264,46 @@ projectile.y += projectile.vy
 
 projectile.vy += 0.35
 
-platforms.forEach(p=>{
+Object.keys(players).forEach(id=>{
 
-if(
-projectile &&
-projectile.x > p.x &&
-projectile.x < p.x + p.w &&
-projectile.y > p.y &&
-projectile.y < p.y + p.h
-){
-projectile = null
+if(id===playerId) return
+
+let p = players[id]
+
+let dx = projectile.x - p.x
+let dy = projectile.y - p.y
+
+let dist = Math.sqrt(dx*dx+dy*dy)
+
+if(dist<25){
+
+p.hp--
+
+updateServer()
+
+projectile=null
+
 }
 
 })
-
-if(projectile){
-
-let dx = projectile.x - (player2.x + playerWidth/2)
-let dy = projectile.y - (player2.y + playerHeight/2)
-
-let dist = Math.sqrt(dx*dx + dy*dy)
-
-if(dist < 20){
-
-player2.hp --
-
-projectile = null
-
-alert("Hit!")
-
-}
-
-}
-
-if(projectile && projectile.y > 400){
-projectile = null
-}
-
-}
-
-function moveLeft(){
-
-player1.x -= 20
-
-}
-
-function moveRight(){
-
-player1.x += 20
-
-}
-
-function jump(){
-
-if(player1.vy === 0){
-player1.vy = -12
-}
 
 }
 
 function drawHP(){
 
-document.getElementById("hp").innerText =
-"Player 🐱 HP: " + player1.hp +
-" | Enemy 🐶 HP: " + player2.hp
+let text=""
+
+Object.values(players).forEach(p=>{
+text += p.name + " HP:" + p.hp + " | "
+})
+
+document.getElementById("hp").innerText=text
+
+}
+
+function updateServer(){
+
+set(ref(db,"rooms/"+room+"/players/"+playerId),players[playerId])
 
 }
 
