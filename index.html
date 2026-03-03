@@ -123,6 +123,40 @@ ctx.fillRect(p.x,p.y,p.w,p.h)
 
 function updatePlayer(p){
 
+p.vy += gravity
+p.y += p.vy
+
+let onGround = false
+
+platforms.forEach(pl=>{
+
+// 玩家脚的位置
+let feet = p.y
+
+// 玩家水平范围
+let left = p.x - 10
+let right = p.x + 10
+
+// 平台顶部
+let top = pl.y
+
+// 判断是否从上方落到平台
+if(
+right > pl.x &&
+left < pl.x + pl.w &&
+feet >= top &&
+feet <= top + 10 &&
+p.vy >= 0
+){
+p.y = top
+p.vy = 0
+onGround = true
+}
+
+})
+
+}
+
 p.vy+=gravity
 p.y+=p.vy
 
