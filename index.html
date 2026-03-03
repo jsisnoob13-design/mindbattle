@@ -1,37 +1,254 @@
-const player1 = { name: "Player 1", combo: 0, health: 100, inDomain: false };
-const player2 = { name: "Player 2", combo: 0, health: 100, inDomain: false };
+<!DOCTYPE html>
+<html>
+<head>
+<title>Emoji Toss Prototype</title>
 
-function handleHit(attacker, defender) {
-    if (attacker.inDomain) {
-        defender.health -= 20; // Extra damage inside domain
-        console.log(`${attacker.name} lands a Sure-Hit attack!`);
-    } else {
-        defender.health -= 10;
-        attacker.combo += 1;
-        defender.combo = 0; // Reset defender's combo because they got hit
-        
-        console.log(`${attacker.name} combo: ${attacker.combo}`);
+<style>
 
-        if (attacker.combo === 3) {
-            triggerDomainExpansion(attacker, defender);
-        }
-    }
+body{
+background:#111;
+color:white;
+text-align:center;
+font-family:Arial;
 }
 
-function triggerDomainExpansion(attacker, defender) {
-    attacker.combo = 0; // Reset after trigger
-    attacker.inDomain = true;
-    defender.inDomain = true;
-    
-    // Visual Change (Logic for your GitHub/Web game)
-    document.body.style.backgroundColor = "black"; 
-    alert(`DOMAIN EXPANSION: ${attacker.name} traps ${defender.name}!`);
-
-    // End domain after 10 seconds
-    setTimeout(() => {
-        attacker.inDomain = false;
-        defender.inDomain = false;
-        document.body.style.backgroundColor = "white";
-        console.log("Domain collapsed.");
-    }, 10000);
+canvas{
+background:#222;
+border:2px solid white;
 }
+
+button{
+margin:5px;
+padding:10px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>Emoji Toss Prototype</h2>
+
+<canvas id="game" width="800" height="400"></canvas>
+
+<br>
+
+<button onclick="moveLeft()">←</button>
+<button onclick="moveRight()">→</button>
+<button onclick="jump()">Jump</button>
+
+<br><br>
+
+Angle
+<input id="angle" type="range" min="10" max="80" value="45">
+
+Power
+<input id="power" type="range" min="2" max="12" value="6">
+
+<button onclick="shoot()">FIRE 🪨</button>
+
+<p id="hp"></p>
+
+<script>
+
+const canvas = document.getElementById("game")
+const ctx = canvas.getContext("2d")
+
+const gravity = 0.5
+
+let player1 = {
+x:100,
+y:50,
+vy:0,
+emoji:"🐱",
+hp:10
+}
+
+let player2 = {
+x:700,
+y:50,
+vy:0,
+emoji:"🐶",
+hp:10
+}
+
+let projectile = null
+
+const platforms = [
+
+{x:0,y:350,w:800,h:50},
+
+{x:80,y:300,w:120,h:20},
+{x:250,y:260,w:120,h:20},
+{x:430,y:300,w:140,h:20},
+{x:640,y:270,w:120,h:20},
+
+{x:150,y:200,w:100,h:20},
+{x:350,y:180,w:120,h:20},
+{x:550,y:200,w:100,h:20},
+
+{x:320,y:120,w:140,h:20}
+
+]
+
+function draw(){
+
+ctx.clearRect(0,0,800,400)
+
+drawPlatforms()
+
+updatePlayer(player1)
+updatePlayer(player2)
+
+drawPlayers()
+
+updateProjectile()
+
+drawHP()
+
+requestAnimationFrame(draw)
+
+}
+
+function drawPlatforms(){
+
+ctx.fillStyle="green"
+
+platforms.forEach(p=>{
+ctx.fillRect(p.x,p.y,p.w,p.h)
+})
+
+}
+
+function updatePlayer(p){
+
+p.vy += gravity
+p.y += p.vy
+
+platforms.forEach(pl=>{
+
+let feet = p.y
+let left = p.x - 10
+let right = p.x + 10
+
+if(
+right > pl.x &&
+left < pl.x + pl.w &&
+feet >= pl.y &&
+feet <= pl.y + 10 &&
+p.vy >= 0
+){
+p.y = pl.y
+p.vy = 0
+}
+
+})
+
+}
+
+function drawPlayers(){
+
+ctx.font="30px Arial"
+
+ctx.fillText(player1.emoji,player1.x,player1.y)
+ctx.fillText(player2.emoji,player2.x,player2.y)
+
+}
+
+function shoot(){
+
+let angle = document.getElementById("angle").value
+let power = document.getElementById("power").value
+
+let rad = angle * Math.PI / 180
+
+projectile = {
+x:player1.x,
+y:player1.y,
+vx:Math.cos(rad) * power,
+vy:-Math.sin(rad) * power
+}
+
+}
+
+function updateProjectile(){
+
+if(!projectile) return
+
+ctx.font="20px Arial"
+ctx.fillText("🪨",projectile.x,projectile.y)
+
+projectile.x += projectile.vx
+projectile.y += projectile.vy
+
+projectile.vy += 0.2
+
+platforms.forEach(p=>{
+
+if(
+projectile &&
+projectile.x > p.x &&
+projectile.x < p.x + p.w &&
+projectile.y > p.y &&
+projectile.y < p.y + p.h
+){
+projectile = null
+}
+
+})
+
+if(projectile){
+
+let dx = projectile.x - player2.x
+let dy = projectile.y - player2.y
+let dist = Math.sqrt(dx*dx + dy*dy)
+
+if(dist < 25){
+
+player2.hp --
+
+projectile = null
+
+alert("Hit!")
+
+}
+
+}
+
+if(projectile && projectile.y > 400){
+projectile = null
+}
+
+}
+
+function moveLeft(){
+player1.x -= 20
+}
+
+function moveRight(){
+player1.x += 20
+}
+
+function jump(){
+
+if(player1.vy === 0){
+player1.vy = -10
+}
+
+}
+
+function drawHP(){
+
+document.getElementById("hp").innerText =
+"Player 🐱 HP: " + player1.hp +
+" | Enemy 🐶 HP: " + player2.hp
+
+}
+
+draw()
+
+</script>
+
+</body>
+</html>
