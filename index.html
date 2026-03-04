@@ -64,17 +64,20 @@
     canvas.width = 900; canvas.height = 500;
 
     let room = "", playerName = "", playerId = Math.random().toString(36).substring(7);
-    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0 };
+    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
     let myPos = { x: 150, y: 405, vy: 0, score: 0, energy: 3, isDunking: false, facingRight: true };
     
+    // Physics Constants
+    const playerGravity = 0.6;
+    const ballGravity = 0.3; // Floatier rainbow gravity
+    const maxBallSpeed = 16; // Prevents "bullet" shots
+    const playerWidth = 35;
+    const playerHeight = 60;
+
     // Controls & UI State
     let keys = {}, lastReleaseTime = { KeyA: 0, KeyD: 0 }, lastClickTime = 0;
     let isCharging = false, chargeStartTime = 0, mouseX = 0, mouseY = 0;
     let toast = { text: "", opacity: 0, x: 0, y: 0, color: "#f1c40f" };
-    
-    const gravity = 0.6;
-    const playerWidth = 35;
-    const playerHeight = 60;
 
     window.joinRoom = function() {
         playerName = document.getElementById("name").value || "Player";
@@ -140,7 +143,7 @@
         Object.keys(players).forEach(id => {
             if(id !== playerId && ball.holder === id && !players[id].isDunking) {
                 let dist = Math.hypot(myPos.x - players[id].x, myPos.y - players[id].y);
-                if(dist < 60) { // Steal
+                if(dist < 60) {
                     ball.holder = playerId;
                     ball.scored = false;
                     myPos.energy--;
@@ -155,31 +158,31 @@
         if(e.button !== 0 || ball.holder !== playerId || myPos.isDunking) return;
         
         const now = Date.now();
-        const inPaint = (myPos.x < 150 || myPos.x > 715); // White floor zone
+        const inPaint = (myPos.x < 150 || myPos.x > 715);
         
         if(now - lastClickTime < 250 && inPaint) {
-            // Instant Dunk
+            // Instant Dominant Dunk
             isCharging = false;
             myPos.isDunking = true;
             ball.holder = null;
             
-            // Jump to rim and smash
             myPos.vy = -12; 
             const isLeftHoop = myPos.x < 450;
-            myPos.x = isLeftHoop ? 20 : 845; // Teleport character to rim
+            myPos.x = isLeftHoop ? 20 : 845; 
             
             ball.x = isLeftHoop ? 20 : 880; 
             ball.y = 220;
-            ball.vx = isLeftHoop ? 4 : -4; // Bounce OUTWARDS after hitting floor
-            ball.vy = 20; 
-            ball.ignoreRim = Date.now() + 500; // FIX: Ignore rim for 0.5s so it doesn't get stuck
+            ball.vx = isLeftHoop ? 5 : -5; 
+            ball.vy = 25; // Massive downward smash
+            
+            ball.ignoreRim = Date.now() + 500; 
+            ball.catchCooldown = Date.now() + 600; // Prevent dunker from instantly recatching it
             
             showToast("WHAT A DUNK!!", "#e74c3c");
             update(ref(db, `rooms/${room}/ball`), ball);
             
-            setTimeout(() => { myPos.isDunking = false; }, 600); // End invincibility
+            setTimeout(() => { myPos.isDunking = false; }, 600);
         } else {
-            // Start Charge
             isCharging = true;
             chargeStartTime = now;
         }
@@ -187,15 +190,26 @@
     });
 
     window.addEventListener("mouseup", e => {
-        // FIX: Shoot no matter what! Any power, any direction.
         if(e.button === 0 && isCharging && ball.holder === playerId) {
             isCharging = false;
             let chargeTime = Math.min((Date.now() - chargeStartTime) / 1000, 1.2); 
-            let powerMultiplier = 0.05 + (chargeTime * 0.1); // Even a tiny tap has enough force to leave the hand
+            let powerMultiplier = 0.04 + (chargeTime * 0.06); 
             
-            ball.vx = (mouseX - myPos.x) * powerMultiplier;
-            ball.vy = (mouseY - myPos.y) * powerMultiplier;
+            let rawVx = (mouseX - myPos.x) * powerMultiplier;
+            let rawVy = (mouseY - myPos.y) * powerMultiplier;
+            let currentSpeed = Math.hypot(rawVx, rawVy);
+            
+            // Speed limit check for Rainbow Arc
+            if(currentSpeed > maxBallSpeed) {
+                ball.vx = (rawVx / currentSpeed) * maxBallSpeed;
+                ball.vy = (rawVy / currentSpeed) * maxBallSpeed;
+            } else {
+                ball.vx = rawVx;
+                ball.vy = rawVy;
+            }
+            
             ball.holder = null;
+            ball.catchCooldown = Date.now() + 300; // Can't instantly catch your own shot
             update(ref(db, `rooms/${room}/ball`), ball);
         }
     });
@@ -208,7 +222,6 @@
             if(keys['KeyA']) nextX -= 5; 
             if(keys['KeyD']) nextX += 5;
 
-            // Player Collision 
             let collision = false;
             Object.keys(players).forEach(id => {
                 if(id !== playerId) {
@@ -218,29 +231,31 @@
             });
 
             if(!collision) myPos.x = nextX;
-            if(keys['KeyW'] && myPos.y >= 405) myPos.vy = -13; // Jump
+            if(keys['KeyW'] && myPos.y >= 405) myPos.vy = -13; 
         }
 
-        // Gravity & Y Boundaries
-        myPos.vy += gravity; myPos.y += myPos.vy;
+        // Player Gravity 
+        myPos.vy += playerGravity; myPos.y += myPos.vy;
         if(myPos.y > 405) { myPos.y = 405; myPos.vy = 0; }
         if(myPos.x < 0) myPos.x = 0;
         if(myPos.x > 900 - playerWidth) myPos.x = 900 - playerWidth;
 
         // --- BALL PHYSICS ---
         if(!ball.holder) {
-            ball.vy += gravity; ball.x += ball.vx; ball.y += ball.vy;
+            ball.vy += ballGravity; // Soft Gravity
+            ball.vx *= 0.99; // Air Resistance (Floaty)
+            ball.vy *= 0.99;
+            ball.x += ball.vx; 
+            ball.y += ball.vy;
             
-            // Wall Bounces
-            if(ball.y > 450) { ball.y = 450; ball.vy *= -0.6; ball.vx *= 0.8; } // Floor (bounce)
-            if(ball.y < 0) { ball.y = 0; ball.vy *= -0.5; } // Ceiling
-            if(ball.x < 0) { ball.x = 0; ball.vx *= -0.5; } // Left Wall
-            if(ball.x > 900) { ball.x = 900; ball.vx *= -0.5; } // Right Wall
+            if(ball.y > 450) { ball.y = 450; ball.vy *= -0.6; ball.vx *= 0.8; } 
+            if(ball.y < 0) { ball.y = 0; ball.vy *= -0.5; } 
+            if(ball.x < 0) { ball.x = 0; ball.vx *= -0.5; } 
+            if(ball.x > 900) { ball.x = 900; ball.vx *= -0.5; } 
 
-            // Rim Collisions (Only if not dunking right now)
             if(Date.now() > ball.ignoreRim) {
                 if(Math.hypot(ball.x - 40, ball.y - 230) < 15 || Math.hypot(ball.x - 860, ball.y - 230) < 15) {
-                    ball.vx *= -0.7; ball.vy *= -0.7; ball.y -= 5;
+                    ball.vx *= -0.6; ball.vy *= -0.6; ball.y -= 3; // Softer rim bounce
                 }
             }
 
@@ -248,9 +263,9 @@
             if(ball.y > 220 && ball.y < 240 && ball.vy > 0 && !ball.scored) {
                 if((ball.x < 35 && ball.x > 5) || (ball.x > 865 && ball.x < 895)) {
                     ball.scored = true; 
-                    ball.vx *= 0.2; ball.vy *= 0.5; // Slow down through net
+                    ball.vx *= 0.2; ball.vy *= 0.5; 
                     
-                    const isThree = (myPos.x > 300 && myPos.x < 600); // Yellow zone
+                    const isThree = (myPos.x > 300 && myPos.x < 600);
                     myPos.score += isThree ? 3 : 2;
                     if(myPos.energy < 5) myPos.energy += 1;
                     
@@ -258,14 +273,15 @@
                 }
             }
 
-            // Pickup Loose Ball
-            if(Math.hypot(myPos.x + 17 - ball.x, myPos.y + 30 - ball.y) < 40 && ball.y > 250) {
-                ball.holder = playerId;
-                ball.scored = false; 
+            // Mid-Air Snatch & Ground Pickup
+            if(Date.now() > (ball.catchCooldown || 0)) {
+                if(Math.hypot(myPos.x + 17 - ball.x, myPos.y + 30 - ball.y) < 45) {
+                    ball.holder = playerId;
+                    ball.scored = false; 
+                }
             }
 
         } else if(ball.holder === playerId) { 
-            // Visible Dribble
             let bounceOffset = Math.sin(Date.now() / 120) * 12; 
             ball.x = myPos.x + (myPos.facingRight ? 35 : -10); 
             ball.y = myPos.y + 30 + bounceOffset; 
@@ -273,36 +289,33 @@
         }
 
         update(ref(db, `rooms/${room}/players/${playerId}`), { x: myPos.x, y: myPos.y, score: myPos.score, energy: myPos.energy, name: playerName, isDunking: myPos.isDunking });
-        if(ball.holder === playerId || (!ball.holder && ball.vy !== 0)) update(ref(db, `rooms/${room}/ball`), ball);
+        if(ball.holder === playerId || (!ball.holder && (Math.abs(ball.vx) > 0.1 || Math.abs(ball.vy) > 0.1))) {
+            update(ref(db, `rooms/${room}/ball`), ball);
+        }
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // Color Coded Floor
-        ctx.fillStyle = "#ecf0f1"; ctx.fillRect(0, 465, 150, 35); ctx.fillRect(750, 465, 150, 35); // White (Paint)
-        ctx.fillStyle = "#3498db"; ctx.fillRect(150, 465, 150, 35); ctx.fillRect(600, 465, 150, 35); // Blue (2pt)
-        ctx.fillStyle = "#f1c40f"; ctx.fillRect(300, 465, 300, 35); // Yellow (3pt)
+        ctx.fillStyle = "#ecf0f1"; ctx.fillRect(0, 465, 150, 35); ctx.fillRect(750, 465, 150, 35); 
+        ctx.fillStyle = "#3498db"; ctx.fillRect(150, 465, 150, 35); ctx.fillRect(600, 465, 150, 35); 
+        ctx.fillStyle = "#f1c40f"; ctx.fillRect(300, 465, 300, 35); 
         
-        // Lines & Hoops
         ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(450, 0); ctx.lineTo(450, 500); ctx.stroke(); // Half court
+        ctx.beginPath(); ctx.moveTo(450, 0); ctx.lineTo(450, 500); ctx.stroke(); 
         ctx.fillStyle = "#e74c3c"; ctx.fillRect(0, 230, 40, 8); ctx.fillRect(860, 230, 40, 8); 
 
-        // Draw Players
         Object.keys(players).forEach(id => {
             const p = players[id];
             ctx.fillStyle = id === playerId ? "#3498db" : "#95a5a6";
-            if(p.isDunking) ctx.fillStyle = "#e74c3c"; // Turn red when invincible
+            if(p.isDunking) ctx.fillStyle = "#e74c3c"; 
             ctx.fillRect(p.x, p.y, playerWidth, playerHeight);
             ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
             ctx.fillText(p.name, p.x + 17, p.y - 10);
         });
 
-        // Draw Ball
         ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.arc(ball.x, ball.y, 12, 0, Math.PI*2); ctx.fill(); 
 
-        // Draw Charge Bar
         if(isCharging && ball.holder === playerId) {
             let chargeAmount = Math.min((Date.now() - chargeStartTime) / 1000, 1.2) / 1.2;
             ctx.fillStyle = `hsl(${120 - chargeAmount * 120}, 100%, 50%)`; 
@@ -310,7 +323,6 @@
             ctx.strokeStyle = "#fff"; ctx.strokeRect(myPos.x - 5, myPos.y - 25, 45, 8);
         }
 
-        // Draw Toast Message
         if(toast.opacity > 0) {
             ctx.fillStyle = toast.color; ctx.globalAlpha = toast.opacity;
             ctx.font = "bold 32px Arial"; ctx.textAlign = "center";
