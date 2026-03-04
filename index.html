@@ -1,383 +1,191 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Mind Battle</title>
-
-<style>
-
-body{
-font-family:Arial;
-text-align:center;
-background:#111;
-color:white;
-}
-
-button{
-padding:10px;
-margin:6px;
-font-size:16px;
-cursor:pointer;
-}
-
-.rules{
-width:420px;
-margin:auto;
-text-align:left;
-}
-
-#chatBox{
-height:150px;
-overflow:auto;
-border:1px solid white;
-width:320px;
-margin:auto;
-padding:10px;
-}
-
-#history{
-width:320px;
-margin:auto;
-text-align:left;
-border:1px solid white;
-padding:10px;
-max-height:150px;
-overflow:auto;
-}
-
-</style>
+    <title>Mind Battle: Gun Edition</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial; text-align: center; background: #1a1a1a; color: white; padding: 20px; }
+        .container { max-width: 500px; margin: auto; background: #2a2a2a; padding: 20px; border-radius: 15px; }
+        button { padding: 12px; margin: 5px; font-size: 16px; cursor: pointer; border-radius: 8px; border: none; transition: 0.2s; }
+        button:hover { opacity: 0.8; }
+        .btn-action { background: #444; color: white; }
+        #chatBox { height: 120px; overflow-y: auto; border: 1px solid #444; margin: 15px 0; padding: 10px; text-align: left; background: #000; }
+        .hp-bar { font-size: 20px; color: #ff4757; margin: 10px 0; }
+        .status-msg { font-weight: bold; color: #eccc68; min-height: 24px; }
+    </style>
 </head>
-
 <body>
 
-<h1>Mind Battle</h1>
+<div class="container">
+    <h1>Mind Battle ⚔️</h1>
+    
+    <div id="setup">
+        <input id="name" placeholder="Your Name">
+        <input id="room" placeholder="Room Code">
+        <button onclick="joinRoom()" style="background: #2ed573;">Join Game</button>
+    </div>
 
-<div class="rules">
+    <div id="gameArea" style="display:none;">
+        <div class="status-msg" id="status">Waiting for opponent...</div>
+        
+        <div>
+            <p>Opponent HP: <span id="enemyHpDisplay"></span></p>
+            <div class="hp-bar" id="enemyHearts"></div>
+        </div>
 
-<b>How to Play</b>
+        <hr>
 
-<ul>
-<li>Both players secretly choose an action.</li>
-<li>Actions reveal at the same time.</li>
-<li>Winner removes one ❤️ from opponent.</li>
-<li>First player to lose all hearts loses.</li>
-</ul>
+        <div>
+            <p>Your HP: <span id="hpDisplay"></span></p>
+            <div class="hp-bar" id="myHearts"></div>
+            <div id="gunStatus" style="font-size: 12px; color: #ffa502;"></div>
+        </div>
 
-<b>Actions</b>
+        <div id="controls">
+            <button class="btn-action" onclick="sendAction('rock')">🪨 Rock</button>
+            <button class="btn-action" onclick="sendAction('paper')">📄 Paper</button>
+            <button class="btn-action" onclick="sendAction('scissors')">✂️ Scissors</button>
+            <button class="btn-action" style="background: #eb4d4b;" onclick="sendAction('gun')">🔫 Gun</button>
+        </div>
 
-<ul>
-<li>🪨 Rock beats ✂ Scissors</li>
-<li>✂ Scissors beats 📄 Paper</li>
-<li>📄 Paper beats 🪨 Rock</li>
-<li>💥 Gun beats everything</li>
-<li>Gun has a 3 round cooldown</li>
-</ul>
+        <h3 id="log">Choose your move!</h3>
 
+        <div id="chatBox"></div>
+        <input id="chatInput" placeholder="Say something...">
+        <button onclick="sendChat()">Send</button>
+    </div>
 </div>
 
-<br>
-
-<input id="name" placeholder="Your name">
-
-<br><br>
-
-<input id="room" placeholder="Room code">
-<button onclick="joinRoom()">Join Room</button>
-
-<h3 id="status">Waiting...</h3>
-<h3 id="enemyStatus"></h3>
-
-<br>
-
-<button onclick="sendAction('rock')">🪨 Rock</button>
-<button onclick="sendAction('paper')">📄 Paper</button>
-<button onclick="sendAction('scissors')">✂ Scissors</button>
-<button onclick="sendAction('gun')">💥 Gun</button>
-
-<h3>Your HP</h3>
-<div id="hpDisplay"></div>
-
-<h3>Opponent HP</h3>
-<div id="enemyHpDisplay"></div>
-
-<h3 id="gunStatus"></h3>
-
-<h3 id="log"></h3>
-
-<h3>Round History</h3>
-<div id="history"></div>
-
-<br>
-
-<button id="newGameBtn" onclick="newGame()" style="display:none;">
-New Game
-</button>
-
-<h2>Chat</h2>
-
-<div id="chatBox"></div>
-
-<input id="chatInput" placeholder="Type message">
-<button onclick="sendChat()">Send</button>
-
 <script type="module">
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-const firebaseConfig={
-apiKey:"AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-authDomain:"mindbattle-f00a3.firebaseapp.com",
-databaseURL:"https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-projectId:"mindbattle-f00a3",
-storageBucket:"mindbattle-f00a3.firebasestorage.app",
-messagingSenderId:"286675354503",
-appId:"1:286675354503:web:00a87613f420cd07a30922"
-}
-
-const app=initializeApp(firebaseConfig)
-const db=getDatabase(app)
-
-let room=""
-let playerName=""
-let playerId=Math.random().toString(36).substring(2)
-
-let hp=10
-let enemyHp=10
-let gunCooldown=0
-let round=1
-
-function updateUI(){
-
-let hearts=""
-let enemyHearts=""
-
-for(let i=0;i<hp;i++){
-hearts+="❤️ "
-}
-
-for(let i=0;i<enemyHp;i++){
-enemyHearts+="❤️ "
-}
-
-document.getElementById("hpDisplay").innerText=hearts
-document.getElementById("enemyHpDisplay").innerText=enemyHearts
-
-if(gunCooldown>0){
-document.getElementById("gunStatus").innerText="Gun cooldown: "+gunCooldown
-}else{
-document.getElementById("gunStatus").innerText="Gun ready"
-}
-
-}
-
-window.joinRoom=function(){
-
-playerName=document.getElementById("name").value
-room=document.getElementById("room").value
-
-document.getElementById("status").innerText="Joined "+room
-
-listenActions()
-listenChat()
-
-}
-
-function listenActions(){
-
-const actionsRef=ref(db,"rooms/"+room+"/actions")
-
-onValue(actionsRef,(snapshot)=>{
-
-const data=snapshot.val()
-
-if(!data)return
-
-const players=Object.keys(data)
-
-if(players.length===1){
-
-if(players[0]!==playerId){
-document.getElementById("enemyStatus").innerText="Opponent has chosen!"
-}
-
-return
-}
-
-if(players.length<2)return
-
-document.getElementById("enemyStatus").innerText="⚔ Reveal!"
-
-const a=data[players[0]]
-const b=data[players[1]]
-
-setTimeout(()=>{
-
-resolveBattle(a,b)
-
-remove(actionsRef)
-
-document.getElementById("enemyStatus").innerText="Next round"
-
-},1000)
-
-})
-
-}
-
-function resolveBattle(a,b){
-
-let playerAction=a.player===playerId?a.action:b.action
-let enemyAction=a.player===playerId?b.action:a.action
-
-let winner="Draw"
-
-if(playerAction==="gun" && gunCooldown>0){
-document.getElementById("log").innerText="Gun on cooldown"
-return
-}
-
-if(playerAction==="gun") gunCooldown=3
-
-if(playerAction==="rock" && enemyAction==="scissors"){
-enemyHp--
-winner=playerName+" win"
-}
-
-else if(playerAction==="paper" && enemyAction==="rock"){
-enemyHp--
-winner=playerName+" win"
-}
-
-else if(playerAction==="scissors" && enemyAction==="paper"){
-enemyHp--
-winner=playerName+" win"
-}
-
-else if(enemyAction==="gun" && playerAction!=="gun"){
-hp--
-winner="Opponent win"
-}
-
-else if(enemyAction==="rock" && playerAction==="scissors"){
-hp--
-winner="Opponent win"
-}
-
-else if(enemyAction==="paper" && playerAction==="rock"){
-hp--
-winner="Opponent win"
-}
-
-else if(enemyAction==="scissors" && playerAction==="paper"){
-hp--
-winner="Opponent win"
-}
-
-if(gunCooldown>0) gunCooldown--
-
-document.getElementById("log").innerText=
-playerAction+" vs "+enemyAction
-
-const historyText=
-"R"+round+"  "+winner+"  "+playerAction+" vs "+enemyAction
-
-const historyDiv=document.getElementById("history")
-
-historyDiv.innerHTML=
-historyText+"<br>"+historyDiv.innerHTML
-
-round++
-
-if(hp<=0){
-document.getElementById("status").innerText="💀 You lost"
-document.getElementById("newGameBtn").style.display="block"
-}
-
-if(enemyHp<=0){
-document.getElementById("status").innerText="🏆 You win!"
-document.getElementById("newGameBtn").style.display="block"
-}
-
-updateUI()
-
-}
-
-window.sendAction=function(action){
-
-if(action==="gun" && gunCooldown>0){
-alert("Gun on cooldown")
-return
-}
-
-document.getElementById("enemyStatus").innerText="Waiting for opponent..."
-
-set(ref(db,"rooms/"+room+"/actions/"+playerId),{
-
-name:playerName,
-player:playerId,
-action:action
-
-})
-
-}
-
-window.sendChat=function(){
-
-const message=document.getElementById("chatInput").value
-
-set(ref(db,"rooms/"+room+"/chat/"+Date.now()),{
-
-name:playerName,
-text:message
-
-})
-
-document.getElementById("chatInput").value=""
-
-}
-
-function listenChat(){
-
-const chatRef=ref(db,"rooms/"+room+"/chat")
-
-onValue(chatRef,(snapshot)=>{
-
-const data=snapshot.val()
-
-if(!data)return
-
-let html=""
-
-Object.values(data).forEach(msg=>{
-html+=`<div><b>${msg.name}:</b> ${msg.text}</div>`
-})
-
-document.getElementById("chatBox").innerHTML=html
-
-})
-
-}
-
-window.newGame=function(){
-
-hp=10
-enemyHp=10
-gunCooldown=0
-round=1
-
-document.getElementById("history").innerHTML=""
-document.getElementById("log").innerText=""
-document.getElementById("status").innerText="New Game Started"
-
-document.getElementById("newGameBtn").style.display="none"
-
-updateUI()
-
-}
-
-updateUI()
-
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    // Your Firebase Config (Keep this as is)
+    const firebaseConfig = {
+        apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+        authDomain: "mindbattle-f00a3.firebaseapp.com",
+        databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "mindbattle-f00a3",
+        storageBucket: "mindbattle-f00a3.firebasestorage.app",
+        messagingSenderId: "286675354503",
+        appId: "1:286675354503:web:00a87613f420cd07a30922"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let room = "";
+    let playerName = "";
+    let playerId = Math.random().toString(36).substring(7);
+    let hp = 10, enemyHp = 10, gunCooldown = 0;
+
+    window.joinRoom = function() {
+        playerName = document.getElementById("name").value || "Player";
+        room = document.getElementById("room").value;
+        if(!room) return alert("Enter a room code");
+        
+        document.getElementById("setup").style.display = "none";
+        document.getElementById("gameArea").style.display = "block";
+        
+        listenActions();
+        listenChat();
+        updateUI();
+    };
+
+    function updateUI() {
+        document.getElementById("myHearts").innerText = "❤️".repeat(hp);
+        document.getElementById("enemyHearts").innerText = "❤️".repeat(enemyHp);
+        document.getElementById("hpDisplay").innerText = hp;
+        document.getElementById("enemyHpDisplay").innerText = enemyHp;
+        document.getElementById("gunStatus").innerText = gunCooldown > 0 ? `Gun Cooldown: ${gunCooldown} rounds` : "Gun Ready!";
+    }
+
+    window.sendAction = function(move) {
+        if(move === 'gun' && gunCooldown > 0) return alert("Gun is cooling down!");
+        
+        set(ref(db, `rooms/${room}/actions/${playerId}`), {
+            move: move,
+            name: playerName
+        });
+        document.getElementById("status").innerText = "Locked in! Waiting...";
+    }
+
+    function listenActions() {
+        onValue(ref(db, `rooms/${room}/actions`), (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+            const keys = Object.keys(data);
+            
+            if (keys.length === 2) {
+                const p1 = data[keys[0]];
+                const p2 = data[keys[1]];
+                
+                // Logic resolution (only one player needs to trigger the "cleanup")
+                resolveRound(keys[0] === playerId ? p1.move : p2.move, keys[0] === playerId ? p2.move : p1.move);
+                
+                // Clear actions for next round after a delay
+                setTimeout(() => {
+                    remove(ref(db, `rooms/${room}/actions`));
+                    document.getElementById("status").innerText = "New Round - Fight!";
+                }, 2000);
+            }
+        });
+    }
+
+    function resolveRound(myMove, enemyMove) {
+        let result = "Draw";
+        
+        // Gun Logic: Gun beats everything except another Gun
+        if (myMove === "gun" && enemyMove !== "gun") {
+            enemyHp--; result = "You WIN this round! 🔫";
+        } else if (enemyMove === "gun" && myMove !== "gun") {
+            hp--; result = "Opponent used GUN! 💀";
+        } else if (myMove === enemyMove) {
+            result = "Draw! 🤝";
+        } 
+        // Standard RPS Logic
+        else if (
+            (myMove === "rock" && enemyMove === "scissors") ||
+            (myMove === "paper" && enemyMove === "rock") ||
+            (myMove === "scissors" && enemyMove === "paper")
+        ) {
+            enemyHp--; result = "You Win! 🎉";
+        } else {
+            hp--; result = "You Lose! 😢";
+        }
+
+        // Manage Gun Cooldown
+        if (myMove === "gun") gunCooldown = 4; // Use + 3 rounds
+        if (gunCooldown > 0) gunCooldown--;
+
+        document.getElementById("log").innerText = `${myMove.toUpperCase()} vs ${enemyMove.toUpperCase()} : ${result}`;
+        updateUI();
+        checkGameOver();
+    }
+
+    function checkGameOver() {
+        if (hp <= 0) alert("GAME OVER - YOU LOST");
+        if (enemyHp <= 0) alert("VICTORY - YOU WON");
+    }
+
+    window.sendChat = function() {
+        const msg = document.getElementById("chatInput").value;
+        if(!msg) return;
+        push(ref(db, `rooms/${room}/chat`), { name: playerName, text: msg });
+        document.getElementById("chatInput").value = "";
+    };
+
+    function listenChat() {
+        onValue(ref(db, `rooms/${room}/chat`), (snapshot) => {
+            const data = snapshot.val();
+            if(!data) return;
+            let html = "";
+            Object.values(data).slice(-5).forEach(m => {
+                html += `<div><strong>${m.name}:</strong> ${m.text}</div>`;
+            });
+            document.getElementById("chatBox").innerHTML = html;
+            document.getElementById("chatBox").scrollTop = document.getElementById("chatBox").scrollHeight;
+        });
+    }
 </script>
-
 </body>
 </html>
