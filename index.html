@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Simple 1v1 Basketball - Arena Edition</title>
+    <title>Simple 1v1 Basketball - Pro Arena</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #1a1a1d; color: white; margin: 0; overflow: hidden; }
         #gameCanvas { background-color: #222; border-bottom: 8px solid #2c3e50; display: block; margin: auto; cursor: crosshair; }
@@ -16,20 +16,23 @@
         /* UPPER LEFT CHAT */
         #chatContainer { 
             position: absolute; top: 10px; left: 10px; 
-            width: 220px; background: rgba(0,0,0,0.4); 
+            width: 250px; background: rgba(0,0,0,0.5); 
             border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
             display: flex; flex-direction: column; pointer-events: auto;
+            z-index: 5;
         }
         #chatBox { 
-            height: 120px; overflow-y: auto; font-size: 12px; 
-            text-align: left; padding: 8px; color: #ddd;
-            scrollbar-width: thin; scrollbar-color: #444 transparent;
+            height: 130px; overflow-y: auto; font-size: 13px; 
+            text-align: left; padding: 10px; color: #ddd;
+            scrollbar-width: thin; scrollbar-color: #555 transparent;
+            word-wrap: break-word;
         }
         #chatInput { 
-            background: rgba(255,255,255,0.1); border: none; 
-            color: white; padding: 8px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
-            outline: none; font-size: 12px;
+            background: rgba(255,255,255,0.15); border: none; 
+            color: white; padding: 10px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
+            outline: none; font-size: 13px; font-family: inherit;
         }
+        #chatInput:focus { background: rgba(255,255,255,0.25); }
 
         /* RESET BUTTON */
         #resetBtn {
@@ -37,8 +40,9 @@
             background: #c0392b; color: white; border: none;
             padding: 8px 15px; border-radius: 5px; cursor: pointer;
             font-weight: bold; font-size: 12px; pointer-events: auto;
+            z-index: 5; transition: 0.2s;
         }
-        #resetBtn:hover { background: #e74c3c; }
+        #resetBtn:hover { background: #e74c3c; transform: scale(1.05); }
 
         #setup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #333; padding: 30px; border-radius: 12px; z-index: 10; border: 2px solid #e67e22; }
     </style>
@@ -47,9 +51,9 @@
 
 <div id="setup">
     <h2>🏀 Simple 1v1 Basketball</h2>
-    <input id="name" placeholder="Name" style="padding:10px; margin:5px;"><br>
-    <input id="room" placeholder="Court Code" style="padding:10px; margin:5px;"><br>
-    <button onclick="joinRoom()" style="padding:10px 20px; margin-top:10px; background:#e67e22; color:white; border:none; cursor:pointer; font-weight:bold;">ENTER ARENA</button>
+    <input id="name" placeholder="Name" style="padding:10px; margin:5px; border-radius: 4px; border: none;"><br>
+    <input id="room" placeholder="Court Code" style="padding:10px; margin:5px; border-radius: 4px; border: none;"><br>
+    <button onclick="joinRoom()" style="padding:10px 20px; margin-top:10px; background:#e67e22; color:white; border:none; border-radius: 4px; cursor:pointer; font-weight:bold;">ENTER ARENA</button>
 </div>
 
 <div class="ui">
@@ -57,7 +61,7 @@
         <span id="s1">0</span>
         <div class="energy-container" id="myEnergyUI"></div>
     </div>
-    <div style="font-size: 30px; color: #f1c40f; padding-top: 10px;">VS</div>
+    <div style="font-size: 30px; color: #f1c40f; padding-top: 10px; text-shadow: 0 0 5px black;">VS</div>
     <div class="score-box">
         <span id="s2">0</span>
         <div class="energy-container" id="enemyEnergyUI"></div>
@@ -65,11 +69,11 @@
 </div>
 
 <button id="resetBtn" onclick="resetArena()" style="display:none;">RESET ARENA</button>
-<canvas id="gameCanvas"></canvas>
+<canvas id="gameCanvas" tabindex="0"></canvas>
 
 <div id="chatContainer" style="display:none;">
     <div id="chatBox"></div>
-    <input id="chatInput" placeholder="Press Enter to talk...">
+    <input id="chatInput" placeholder="Press Enter to talk..." autocomplete="off">
 </div>
 
 <script type="module">
@@ -93,6 +97,7 @@
     let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
     let myPos = { x: 150, y: 405, vy: 0, score: 0, energy: 3, isDunking: false, facingRight: true };
     
+    // Physics Constants
     const playerGravity = 0.6;
     const ballGravity = 0.35; 
     const maxBallSpeed = 23; 
@@ -103,13 +108,22 @@
     let isCharging = false, chargeStartTime = 0, mouseX = 0, mouseY = 0;
     let toast = { text: "", opacity: 0, x: 450, y: 150, color: "#f1c40f" };
 
+    // Helper to prevent HTML breaks in chat
+    function escapeHTML(str) {
+        return str.replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        }[tag] || tag));
+    }
+
     window.joinRoom = function() {
-        playerName = document.getElementById("name").value || "Player";
-        room = document.getElementById("room").value;
+        playerName = document.getElementById("name").value.trim() || "Player";
+        room = document.getElementById("room").value.trim();
         if(!room) return;
+        
         document.getElementById("setup").style.display = "none";
         document.getElementById("chatContainer").style.display = "flex";
         document.getElementById("resetBtn").style.display = "block";
+        canvas.focus(); // Auto focus game
         
         onValue(ref(db, `rooms/${room}/players`), s => {
             players = s.val() || {};
@@ -118,7 +132,7 @@
                 if(id !== playerId) {
                     document.getElementById("s2").innerText = players[id].score || 0;
                     updateEnergyUI("enemyEnergyUI", players[id].energy || 0);
-                    // Remote Reset Catch: If remote player score is 0 and ours isn't, they likely triggered a reset
+                    // Sync Reset
                     if(players[id].score === 0 && myPos.score > 0) {
                         myPos.score = 0; myPos.energy = 3;
                     }
@@ -134,7 +148,10 @@
             const data = s.val();
             if(data) {
                 Object.values(data).forEach(m => {
-                    chatBox.innerHTML += `<div><strong style="color:${m.user === playerName ? '#3498db' : '#95a5a6'}">${m.user}:</strong> ${m.msg}</div>`;
+                    const safeUser = escapeHTML(m.user);
+                    const safeMsg = escapeHTML(m.msg);
+                    const color = safeUser === playerName ? '#3498db' : (safeUser === 'SYSTEM' ? '#e74c3c' : '#95a5a6');
+                    chatBox.innerHTML += `<div style="margin-bottom: 4px;"><strong style="color:${color}">${safeUser}:</strong> ${safeMsg}</div>`;
                 });
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
@@ -144,40 +161,44 @@
     };
 
     window.resetArena = function() {
-        // Reset Local
         myPos.score = 0; myPos.energy = 3;
-        // Reset Ball
         ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
         update(ref(db, `rooms/${room}/ball`), ball);
-        // Inform others via Chat & Database
         push(ref(db, `rooms/${room}/chat`), { user: "SYSTEM", msg: `🚨 ${playerName} HAS RESET THE GAME! 🚨` });
-        Object.keys(players).forEach(id => {
-            update(ref(db, `rooms/${room}/players/${id}`), { score: 0, energy: 3 });
-        });
+        Object.keys(players).forEach(id => { update(ref(db, `rooms/${room}/players/${id}`), { score: 0, energy: 3 }); });
         showToast("GAME RESET!", "#e74c3c");
+        canvas.focus();
     };
 
-    // --- CHAT & CONTROLS ---
+    // --- INPUT CONTROLS ---
     window.addEventListener("keydown", e => {
+        // CHAT TOGGLE LOGIC
         if(e.code === "Enter") {
             const input = document.getElementById("chatInput");
             if(document.activeElement === input) {
+                // Send and Close
                 if(input.value.trim() !== "") {
-                    push(ref(db, `rooms/${room}/chat`), { user: playerName, msg: input.value });
+                    push(ref(db, `rooms/${room}/chat`), { user: playerName, msg: input.value.trim() });
                     input.value = "";
                 }
                 input.blur();
+                canvas.focus();
             } else {
+                // Open and Stop Moving
+                keys = {}; 
                 input.focus();
             }
             return;
         }
+
+        // Ignore other keys if typing in chat
         if(document.activeElement.id === 'chatInput') return;
         
         keys[e.code] = true;
         if(e.code === 'KeyA') myPos.facingRight = false;
         if(e.code === 'KeyD') myPos.facingRight = true;
 
+        // DASH LOGIC
         if((e.code === 'KeyA' || e.code === 'KeyD') && myPos.energy >= 1) {
             if(Date.now() - lastReleaseTime[e.code] < 200) {
                 myPos.x += (e.code === 'KeyD' ? 90 : -90);
@@ -187,6 +208,7 @@
     });
 
     window.addEventListener("keyup", e => {
+        if(document.activeElement.id === 'chatInput') return;
         keys[e.code] = false;
         if(e.code === 'KeyA' || e.code === 'KeyD') lastReleaseTime[e.code] = Date.now();
     });
@@ -196,9 +218,11 @@
         mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top;
     });
 
+    // STEAL
     canvas.oncontextmenu = (e) => { 
         e.preventDefault();
-        if(myPos.energy < 1 || myPos.isDunking) return;
+        if(myPos.energy < 1 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
+        
         Object.keys(players).forEach(id => {
             if(id !== playerId && ball.holder === id) {
                 if(Math.hypot(myPos.x - players[id].x, myPos.y - players[id].y) < 60) {
@@ -209,12 +233,15 @@
         });
     };
 
+    // SHOOT & DUNK
     canvas.addEventListener("mousedown", e => {
-        if(e.button !== 0 || myPos.isDunking) return;
+        if(e.button !== 0 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
+        
         const now = Date.now();
         const inPaint = (myPos.x < 150 || myPos.x > 715);
         
         if(now - lastClickTime < 300 && inPaint) {
+            // Power Dunk
             isCharging = false; myPos.isDunking = true; ball.holder = null;
             myPos.vy = -12; 
             const isLeft = myPos.x < 450;
@@ -226,6 +253,7 @@
             update(ref(db, `rooms/${room}/ball`), ball);
             setTimeout(() => { myPos.isDunking = false; }, 600);
         } else if (ball.holder === playerId) {
+            // Charge Shot
             isCharging = true; chargeStartTime = now;
         }
         lastClickTime = now;
@@ -239,8 +267,10 @@
             let rawVx = (mouseX - myPos.x) * powerMultiplier;
             let rawVy = (mouseY - myPos.y) * powerMultiplier;
             let speed = Math.hypot(rawVx, rawVy);
+            
             if(speed > maxBallSpeed) { ball.vx = (rawVx/speed)*maxBallSpeed; ball.vy = (rawVy/speed)*maxBallSpeed; }
             else { ball.vx = rawVx; ball.vy = rawVy; }
+            
             ball.holder = null; ball.catchCooldown = Date.now() + 300;
             update(ref(db, `rooms/${room}/ball`), ball);
         }
@@ -262,18 +292,23 @@
             if(!collision) myPos.x = nextX;
             if(keys['KeyW'] && myPos.y >= 405) myPos.vy = -13; 
         }
+        
         myPos.vy += playerGravity; myPos.y += myPos.vy;
         if(myPos.y > 405) { myPos.y = 405; myPos.vy = 0; }
         if(myPos.x < 0) myPos.x = 0; if(myPos.x > 865) myPos.x = 865;
 
+        // --- BALL PHYSICS ---
         if(!ball.holder) {
             ball.vy += ballGravity; ball.vx *= 0.99; ball.vy *= 0.99;
             ball.x += ball.vx; ball.y += ball.vy;
+            
             if(ball.y > 450) { ball.y = 450; ball.vy *= -0.6; ball.vx *= 0.8; } 
             if(ball.x < 0 || ball.x > 900) ball.vx *= -0.5;
+            
             if(Date.now() > ball.ignoreRim) {
                 if(Math.hypot(ball.x-40, ball.y-230) < 15 || Math.hypot(ball.x-860, ball.y-230) < 15) { ball.vx *= -0.6; ball.vy *= -0.6; ball.y -= 3; }
             }
+            
             if(ball.y > 220 && ball.y < 240 && ball.vy > 0 && !ball.scored) {
                 if((ball.x < 35 && ball.x > 5) || (ball.x > 865 && ball.x < 895)) {
                     ball.scored = true; ball.vx *= 0.2; ball.vy *= 0.5; 
@@ -282,6 +317,7 @@
                     showToast(is3 ? "3 POINTS! RAINBOW!" : "SWISH!");
                 }
             }
+            
             if(Date.now() > (ball.catchCooldown || 0)) {
                 if(Math.hypot(myPos.x+17 - ball.x, myPos.y+30 - ball.y) < 45) { ball.holder = playerId; ball.scored = false; }
             }
@@ -289,17 +325,21 @@
             ball.x = myPos.x + (myPos.facingRight ? 35 : -10); ball.y = myPos.y + 30 + Math.sin(Date.now()/120)*12; 
         }
 
+        // Database Sync
         update(ref(db, `rooms/${room}/players/${playerId}`), { x: myPos.x, y: myPos.y, score: myPos.score, energy: myPos.energy, name: playerName, isDunking: myPos.isDunking });
         if(ball.holder === playerId || (!ball.holder && (Math.abs(ball.vx) > 0.1 || Math.abs(ball.vy) > 0.1))) update(ref(db, `rooms/${room}/ball`), ball);
     }
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Court markings
         ctx.fillStyle = "#ecf0f1"; ctx.fillRect(0, 465, 150, 35); ctx.fillRect(750, 465, 150, 35); 
         ctx.fillStyle = "#3498db"; ctx.fillRect(150, 465, 150, 35); ctx.fillRect(600, 465, 150, 35); 
         ctx.fillStyle = "#f1c40f"; ctx.fillRect(300, 465, 300, 35); 
         ctx.fillStyle = "#e74c3c"; ctx.fillRect(0, 230, 40, 8); ctx.fillRect(860, 230, 40, 8); 
 
+        // Draw Players
         Object.keys(players).forEach(id => {
             const p = players[id];
             ctx.fillStyle = id === playerId ? "#3498db" : "#95a5a6";
@@ -309,19 +349,23 @@
             ctx.fillText(p.name, p.x + 17, p.y - 10);
         });
 
+        // Draw Ball
         ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.arc(ball.x, ball.y, 12, 0, Math.PI*2); ctx.fill(); 
 
+        // Draw Charge Bar
         if(isCharging && ball.holder === playerId) {
             let charge = Math.min((Date.now()-chargeStartTime)/1000, 1.2)/1.2;
             ctx.fillStyle = `hsl(${120-charge*120},100%,50%)`; ctx.fillRect(myPos.x-5, myPos.y-25, 45*charge, 8);
         }
 
+        // Draw Toast Messages
         if(toast.opacity > 0) {
             ctx.fillStyle = toast.color; ctx.globalAlpha = toast.opacity;
             ctx.font = "bold 32px Arial"; ctx.textAlign = "center";
             ctx.fillText(toast.text, toast.x, toast.y); 
             toast.opacity -= 0.01; toast.y -= 0.5; ctx.globalAlpha = 1.0;
         }
+        
         document.getElementById("s1").innerText = myPos.score;
     }
 
