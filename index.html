@@ -69,8 +69,8 @@
     
     // Physics Constants
     const playerGravity = 0.6;
-    const ballGravity = 0.3; // Floatier rainbow gravity
-    const maxBallSpeed = 16; // Prevents "bullet" shots
+    const ballGravity = 0.35; // Loopy rainbow gravity
+    const maxBallSpeed = 22; // Boosted max speed for full-court shots
     const playerWidth = 35;
     const playerHeight = 60;
 
@@ -155,13 +155,13 @@
 
     // --- SHOOT & DUNK (Left Click) ---
     canvas.addEventListener("mousedown", e => {
-        if(e.button !== 0 || ball.holder !== playerId || myPos.isDunking) return;
+        if(e.button !== 0 || myPos.isDunking) return;
         
         const now = Date.now();
         const inPaint = (myPos.x < 150 || myPos.x > 715);
         
-        if(now - lastClickTime < 250 && inPaint) {
-            // Instant Dominant Dunk
+        // DUNK LOGIC: If you double click quickly in the paint, it overrides EVERYTHING
+        if(now - lastClickTime < 300 && inPaint) {
             isCharging = false;
             myPos.isDunking = true;
             ball.holder = null;
@@ -176,13 +176,14 @@
             ball.vy = 25; // Massive downward smash
             
             ball.ignoreRim = Date.now() + 500; 
-            ball.catchCooldown = Date.now() + 600; // Prevent dunker from instantly recatching it
+            ball.catchCooldown = Date.now() + 600; 
             
             showToast("WHAT A DUNK!!", "#e74c3c");
             update(ref(db, `rooms/${room}/ball`), ball);
             
             setTimeout(() => { myPos.isDunking = false; }, 600);
-        } else {
+        } else if (ball.holder === playerId) {
+            // NORMAL SHOOT CHARGE
             isCharging = true;
             chargeStartTime = now;
         }
@@ -190,16 +191,17 @@
     });
 
     window.addEventListener("mouseup", e => {
-        if(e.button === 0 && isCharging && ball.holder === playerId) {
+        if(e.button === 0 && isCharging && ball.holder === playerId && !myPos.isDunking) {
             isCharging = false;
             let chargeTime = Math.min((Date.now() - chargeStartTime) / 1000, 1.2); 
-            let powerMultiplier = 0.04 + (chargeTime * 0.06); 
+            
+            // Boosted power multiplier for deep 3-pointers
+            let powerMultiplier = 0.08 + (chargeTime * 0.12); 
             
             let rawVx = (mouseX - myPos.x) * powerMultiplier;
             let rawVy = (mouseY - myPos.y) * powerMultiplier;
             let currentSpeed = Math.hypot(rawVx, rawVy);
             
-            // Speed limit check for Rainbow Arc
             if(currentSpeed > maxBallSpeed) {
                 ball.vx = (rawVx / currentSpeed) * maxBallSpeed;
                 ball.vy = (rawVy / currentSpeed) * maxBallSpeed;
@@ -209,7 +211,7 @@
             }
             
             ball.holder = null;
-            ball.catchCooldown = Date.now() + 300; // Can't instantly catch your own shot
+            ball.catchCooldown = Date.now() + 300; 
             update(ref(db, `rooms/${room}/ball`), ball);
         }
     });
@@ -242,8 +244,8 @@
 
         // --- BALL PHYSICS ---
         if(!ball.holder) {
-            ball.vy += ballGravity; // Soft Gravity
-            ball.vx *= 0.99; // Air Resistance (Floaty)
+            ball.vy += ballGravity; // Floaty Rainbow Gravity
+            ball.vx *= 0.99; // Air Resistance
             ball.vy *= 0.99;
             ball.x += ball.vx; 
             ball.y += ball.vy;
@@ -255,7 +257,7 @@
 
             if(Date.now() > ball.ignoreRim) {
                 if(Math.hypot(ball.x - 40, ball.y - 230) < 15 || Math.hypot(ball.x - 860, ball.y - 230) < 15) {
-                    ball.vx *= -0.6; ball.vy *= -0.6; ball.y -= 3; // Softer rim bounce
+                    ball.vx *= -0.6; ball.vy *= -0.6; ball.y -= 3; 
                 }
             }
 
