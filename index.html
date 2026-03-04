@@ -1,348 +1,315 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Simple 1v1 Basketball - Pro Arena</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #1a1a1d; color: white; margin: 0; overflow: hidden; }
-        #gameCanvas { background-color: #222; border-bottom: 8px solid #2c3e50; display: block; margin: auto; cursor: crosshair; }
-        
-        /* UI LAYOUT */
-        .ui { position: absolute; top: 10px; width: 100%; display: flex; justify-content: center; gap: 40px; pointer-events: none; }
-        .score-box { background: rgba(0,0,0,0.8); padding: 10px 25px; border: 2px solid #f1c40f; font-size: 28px; border-radius: 8px; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
-        .energy-container { display: flex; gap: 3px; margin-top: 5px; }
-        .energy-bar { width: 15px; height: 6px; background: #555; border-radius: 2px; }
-        .energy-filled { background: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
-
-        /* UPPER LEFT CHAT */
-        #chatContainer { 
-            position: absolute; top: 10px; left: 10px; 
-            width: 250px; background: rgba(0,0,0,0.5); 
-            border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
-            display: flex; flex-direction: column; pointer-events: auto;
-            z-index: 5;
-        }
-        #chatBox { 
-            height: 130px; overflow-y: auto; font-size: 13px; 
-            text-align: left; padding: 10px; color: #ddd;
-            scrollbar-width: thin; scrollbar-color: #555 transparent;
-            word-wrap: break-word;
-        }
-        #chatInput { 
-            background: rgba(255,255,255,0.15); border: none; 
-            color: white; padding: 10px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
-            outline: none; font-size: 13px; font-family: inherit;
-        }
-        #chatInput:focus { background: rgba(255,255,255,0.25); }
-
-        /* RESET BUTTON (Upper Right) */
-        #resetBtn {
-            position: absolute; top: 10px; right: 10px;
-            background: #c0392b; color: white; border: none;
-            padding: 8px 15px; border-radius: 5px; cursor: pointer;
-            font-weight: bold; font-size: 12px; pointer-events: auto;
-            z-index: 5; transition: 0.2s;
-        }
-        #resetBtn:hover { background: #e74c3c; transform: scale(1.05); }
-
-        #setup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #333; padding: 30px; border-radius: 12px; z-index: 10; border: 2px solid #e67e22; }
-    </style>
-</head>
-<body>
-
-<div id="setup">
-    <h2>🏀 Simple 1v1 Basketball</h2>
-    <input id="name" placeholder="Name" style="padding:10px; margin:5px; border-radius: 4px; border: none;"><br>
-    <input id="room" placeholder="Court Code" style="padding:10px; margin:5px; border-radius: 4px; border: none;"><br>
-    <button onclick="joinRoom()" style="padding:10px 20px; margin-top:10px; background:#e67e22; color:white; border:none; border-radius: 4px; cursor:pointer; font-weight:bold;">ENTER ARENA</button>
-</div>
-
-<div class="ui">
-    <div class="score-box">
-        <span id="s1">0</span>
-        <div class="energy-container" id="myEnergyUI"></div>
-    </div>
-    <div style="font-size: 30px; color: #f1c40f; padding-top: 10px; text-shadow: 0 0 5px black;">VS</div>
-    <div class="score-box">
-        <span id="s2">0</span>
-        <div class="energy-container" id="enemyEnergyUI"></div>
-    </div>
-</div>
-
-<button id="resetBtn" onclick="resetArena()" style="display:none;">RESET ARENA</button>
-<canvas id="gameCanvas" tabindex="0"></canvas>
-
-<div id="chatContainer" style="display:none;">
-    <div id="chatBox"></div>
-    <input id="chatInput" placeholder="Press Enter to talk..." autocomplete="off">
-</div>
-
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-    const firebaseConfig = {
-        apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-        authDomain: "mindbattle-f00a3.firebaseapp.com",
-        databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "mindbattle-f00a3"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = 900; canvas.height = 500;
-
-    let room = "", playerName = "", playerId = Math.random().toString(36).substring(7);
-    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
-    let myPos = { x: 150, y: 405, vy: 0, score: 0, energy: 3, isDunking: false, facingRight: true };
-    
-    const playerGravity = 0.6;
-    const ballGravity = 0.35; 
-    const maxBallSpeed = 23; 
-    const playerWidth = 35;
-    const playerHeight = 60;
-    const ballRadius = 12;
-
-    let keys = {}, lastReleaseTime = { KeyA: 0, KeyD: 0 }, lastClickTime = 0;
-    let isCharging = false, chargeStartTime = 0, mouseX = 0, mouseY = 0;
-    let toast = { text: "", opacity: 0, x: 450, y: 150, color: "#f1c40f" };
-
-    function escapeHTML(str) {
-        return str.replace(/[&<>'"]/g, tag => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-        }[tag] || tag));
-    }
-
-    function updateEnergyUI(elementId, energyCount) {
-        let html = "";
-        for(let i=0; i<5; i++) html += `<div class="energy-bar ${i < energyCount ? 'energy-filled' : ''}"></div>`;
-        document.getElementById(elementId).innerHTML = html;
-    }
-
-    window.joinRoom = function() {
-        playerName = document.getElementById("name").value.trim() || "Player";
-        room = document.getElementById("room").value.trim();
-        if(!room) return;
-        
-        document.getElementById("setup").style.display = "none";
-        document.getElementById("chatContainer").style.display = "flex";
-        document.getElementById("resetBtn").style.display = "block";
-        canvas.focus();
-        
-        onValue(ref(db, `rooms/${room}/players`), s => {
-            players = s.val() || {};
-            updateEnergyUI("myEnergyUI", myPos.energy);
-            Object.keys(players).forEach(id => {
-                if(id !== playerId) {
-                    document.getElementById("s2").innerText = players[id].score || 0;
-                    updateEnergyUI("enemyEnergyUI", players[id].energy || 0);
-                    if(players[id].score === 0 && myPos.score > 0) { myPos.score = 0; myPos.energy = 3; }
-                }
-            });
-        });
-
-        onValue(ref(db, `rooms/${room}/ball`), s => { if(s.val() && ball.holder !== playerId) ball = s.val(); });
-
-        onValue(ref(db, `rooms/${room}/chat`), s => {
-            const chatBox = document.getElementById("chatBox");
-            chatBox.innerHTML = "";
-            const data = s.val();
-            if(data) {
-                Object.values(data).forEach(m => {
-                    const safeUser = escapeHTML(m.user);
-                    const safeMsg = escapeHTML(m.msg);
-                    const color = safeUser === playerName ? '#3498db' : (safeUser === 'SYSTEM' ? '#e74c3c' : '#95a5a6');
-                    chatBox.innerHTML += `<div style="margin-bottom: 4px;"><strong style="color:${color}">${safeUser}:</strong> ${safeMsg}</div>`;
-                });
-                chatBox.scrollTop = chatBox.scrollHeight;
-            }
-        });
-
-        gameLoop();
-    };
-
-    window.resetArena = function() {
-        myPos.score = 0; myPos.energy = 3;
-        ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
-        update(ref(db, `rooms/${room}/ball`), ball);
-        push(ref(db, `rooms/${room}/chat`), { user: "SYSTEM", msg: `🚨 ${playerName} HAS RESET THE GAME! 🚨` });
-        Object.keys(players).forEach(id => { update(ref(db, `rooms/${room}/players/${id}`), { score: 0, energy: 3 }); });
-        showToast("GAME RESET!", "#e74c3c");
-        canvas.focus();
-    };
-
-    window.addEventListener("keydown", e => {
-        if(e.code === "Enter") {
-            const input = document.getElementById("chatInput");
-            if(document.activeElement === input) {
-                if(input.value.trim() !== "") {
-                    push(ref(db, `rooms/${room}/chat`), { user: playerName, msg: input.value.trim() });
-                    input.value = "";
-                }
-                input.blur(); canvas.focus();
-            } else {
-                keys = {}; input.focus();
-            }
-            return;
-        }
-        if(document.activeElement.id === 'chatInput') return;
-        keys[e.code] = true;
-        if(e.code === 'KeyA') myPos.facingRight = false;
-        if(e.code === 'KeyD') myPos.facingRight = true;
-        if((e.code === 'KeyA' || e.code === 'KeyD') && myPos.energy >= 1) {
-            if(Date.now() - lastReleaseTime[e.code] < 200) { myPos.x += (e.code === 'KeyD' ? 90 : -90); myPos.energy--; }
-        }
-    });
-
-    window.addEventListener("keyup", e => {
-        if(document.activeElement.id === 'chatInput') return;
-        keys[e.code] = false;
-        if(e.code === 'KeyA' || e.code === 'KeyD') lastReleaseTime[e.code] = Date.now();
-    });
-
-    canvas.addEventListener("mousemove", e => {
-        const rect = canvas.getBoundingClientRect();
-        mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top;
-    });
-
-    canvas.oncontextmenu = (e) => { 
-        e.preventDefault();
-        if(myPos.energy < 1 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
-        Object.keys(players).forEach(id => {
-            if(id !== playerId && ball.holder === id) {
-                if(Math.hypot(myPos.x - players[id].x, myPos.y - players[id].y) < 60) {
-                    ball.holder = playerId; ball.scored = false; myPos.energy--;
-                    update(ref(db, `rooms/${room}/ball`), ball);
-                }
-            }
-        });
-    };
-
-    canvas.addEventListener("mousedown", e => {
-        if(e.button !== 0 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
-        const now = Date.now();
-        const inPaint = (myPos.x < 150 || myPos.x > 715);
-        if(now - lastClickTime < 300 && inPaint) {
-            isCharging = false; myPos.isDunking = true; ball.holder = null;
-            myPos.vy = -12; 
-            const isLeft = myPos.x < 450;
-            myPos.x = isLeft ? 20 : 845; 
-            ball.x = isLeft ? 20 : 880; ball.y = 220;
-            ball.vx = isLeft ? 5 : -5; ball.vy = 26; 
-            ball.ignoreRim = Date.now() + 500; ball.catchCooldown = Date.now() + 600;
-            showToast("POWER DUNK!!", "#e74c3c");
-            update(ref(db, `rooms/${room}/ball`), ball);
-            setTimeout(() => { myPos.isDunking = false; }, 600);
-        } else if (ball.holder === playerId) {
-            isCharging = true; chargeStartTime = now;
-        }
-        lastClickTime = now;
-    });
-
-    window.addEventListener("mouseup", e => {
-        if(e.button === 0 && isCharging && ball.holder === playerId) {
-            isCharging = false;
-            let chargeTime = Math.min((Date.now() - chargeStartTime) / 1000, 1.2); 
-            let powerMultiplier = 0.09 + (chargeTime * 0.13); 
-            let rawVx = (mouseX - myPos.x) * powerMultiplier;
-            let rawVy = (mouseY - myPos.y) * powerMultiplier;
-            let speed = Math.hypot(rawVx, rawVy);
-            if(speed > maxBallSpeed) { ball.vx = (rawVx/speed)*maxBallSpeed; ball.vy = (rawVy/speed)*maxBallSpeed; }
-            else { ball.vx = rawVx; ball.vy = rawVy; }
-            ball.holder = null; ball.catchCooldown = Date.now() + 300;
-            update(ref(db, `rooms/${room}/ball`), ball);
-        }
-    });
-
-    function showToast(txt, color = "#f1c40f") { toast = { text: txt, opacity: 1, x: 450, y: 150, color: color }; }
-
-    function updateLogic() {
-        if(!myPos.isDunking) {
-            let nextX = myPos.x;
-            if(keys['KeyA']) nextX -= 5; if(keys['KeyD']) nextX += 5;
-            let collision = false;
-            Object.keys(players).forEach(id => {
-                if(id !== playerId) {
-                    let ex = players[id].x, ey = players[id].y;
-                    if(nextX < ex + playerWidth && nextX + playerWidth > ex && myPos.y < ey + playerHeight && myPos.y + playerHeight > ey) collision = true;
-                }
-            });
-            if(!collision) myPos.x = nextX;
-            if(keys['KeyW'] && myPos.y >= 405) myPos.vy = -13; 
-        }
-        myPos.vy += playerGravity; myPos.y += myPos.vy;
-        if(myPos.y > 405) { myPos.y = 405; myPos.vy = 0; }
-        if(myPos.x < 0) myPos.x = 0; if(myPos.x > 865) myPos.x = 865;
-
-        // --- CONCRETE BALL PHYSICS ---
-        if(!ball.holder) {
-            ball.vy += ballGravity; ball.vx *= 0.99; ball.vy *= 0.99;
-            ball.x += ball.vx; ball.y += ball.vy;
-            
-            // Wall/Floor Concrete Check
-            if(ball.y > 465 - ballRadius) { ball.y = 465 - ballRadius; ball.vy *= -0.6; ball.vx *= 0.8; } 
-            if(ball.y < ballRadius) { ball.y = ballRadius; ball.vy *= -0.5; }
-            if(ball.x < ballRadius) { ball.x = ballRadius; ball.vx *= -0.5; }
-            if(ball.x > 900 - ballRadius) { ball.x = 900 - ballRadius; ball.vx *= -0.5; }
-            
-            if(Date.now() > ball.ignoreRim) {
-                if(Math.hypot(ball.x-40, ball.y-230) < 15 + ballRadius || Math.hypot(ball.x-860, ball.y-230) < 15 + ballRadius) { 
-                    ball.vx *= -0.6; ball.vy *= -0.6; 
-                    if(ball.x < 450) ball.x += 2; else ball.x -= 2;
-                }
-            }
-            
-            if(ball.y > 220 && ball.y < 240 && ball.vy > 0 && !ball.scored) {
-                if((ball.x < 40 && ball.x > 0) || (ball.x > 860 && ball.x < 900)) {
-                    ball.scored = true; ball.vx *= 0.2; ball.vy *= 0.5; 
-                    const is3 = (myPos.x > 300 && myPos.x < 600);
-                    myPos.score += is3 ? 3 : 2; if(myPos.energy < 5) myPos.energy++;
-                    showToast(is3 ? "3 POINTS! RAINBOW!" : "SWISH!");
-                }
-            }
-            
-            if(Date.now() > (ball.catchCooldown || 0)) {
-                if(Math.hypot(myPos.x+17 - ball.x, myPos.y+30 - ball.y) < 45) { ball.holder = playerId; ball.scored = false; }
-            }
-        } else if(ball.holder === playerId) { 
-            ball.x = myPos.x + (myPos.facingRight ? 35 : -10); ball.y = myPos.y + 30 + Math.sin(Date.now()/120)*12; 
-        }
-
-        update(ref(db, `rooms/${room}/players/${playerId}`), { x: myPos.x, y: myPos.y, score: myPos.score, energy: myPos.energy, name: playerName, isDunking: myPos.isDunking });
-        if(ball.holder === playerId || (!ball.holder && (Math.abs(ball.vx) > 0.1 || Math.abs(ball.vy) > 0.1))) update(ref(db, `rooms/${room}/ball`), ball);
-    }
-
-    function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#ecf0f1"; ctx.fillRect(0, 465, 150, 35); ctx.fillRect(750, 465, 150, 35); 
-        ctx.fillStyle = "#3498db"; ctx.fillRect(150, 465, 150, 35); ctx.fillRect(600, 465, 150, 35); 
-        ctx.fillStyle = "#f1c40f"; ctx.fillRect(300, 465, 300, 35); 
-        ctx.fillStyle = "#e74c3c"; ctx.fillRect(0, 230, 40, 8); ctx.fillRect(860, 230, 40, 8); 
-
-        Object.keys(players).forEach(id => {
-            const p = players[id]; ctx.fillStyle = id === playerId ? "#3498db" : "#95a5a6";
-            if(p.isDunking) ctx.fillStyle = "#e74c3c"; 
-            ctx.fillRect(p.x, p.y, playerWidth, playerHeight);
-            ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
-            ctx.fillText(p.name, p.x + 17, p.y - 10);
-        });
-
-        ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ballRadius, 0, Math.PI*2); ctx.fill(); 
-
-        if(isCharging && ball.holder === playerId) {
-            let charge = Math.min((Date.now()-chargeStartTime)/1000, 1.2)/1.2;
-            ctx.fillStyle = `hsl(${120-charge*120},100%,50%)`; ctx.fillRect(myPos.x-5, myPos.y-25, 45*charge, 8);
-        }
-
-        if(toast.opacity > 0) {
-            ctx.fillStyle = toast.color; ctx.globalAlpha = toast.opacity; ctx.font = "bold 32px Arial"; ctx.textAlign = "center";
-            ctx.fillText(toast.text, toast.x, toast.y); toast.opacity -= 0.01; toast.y -= 0.5; ctx.globalAlpha = 1.0;
-        }
-        document.getElementById("s1").innerText = myPos.score;
-    }
-
-    function gameLoop() { updateLogic(); draw(); requestAnimationFrame(gameLoop); }
-</script>
-</body>
-</html>
+diff --git a/index.html b/index.html
+index a0d2138039b701e42b55143ca3358db7a9ffd3ec..d649edeae2bba8979c3591bc7d3125b710f5ceab 100644
+--- a/index.html
++++ b/index.html
+@@ -72,260 +72,291 @@
+ <canvas id="gameCanvas" tabindex="0"></canvas>
+ 
+ <div id="chatContainer" style="display:none;">
+     <div id="chatBox"></div>
+     <input id="chatInput" placeholder="Press Enter to talk..." autocomplete="off">
+ </div>
+ 
+ <script type="module">
+     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+     import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+ 
+     const firebaseConfig = {
+         apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+         authDomain: "mindbattle-f00a3.firebaseapp.com",
+         databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+         projectId: "mindbattle-f00a3"
+     };
+ 
+     const app = initializeApp(firebaseConfig);
+     const db = getDatabase(app);
+     const canvas = document.getElementById("gameCanvas");
+     const ctx = canvas.getContext("2d");
+     canvas.width = 900; canvas.height = 500;
+ 
+     let room = "", playerName = "", playerId = Math.random().toString(36).substring(7);
+-    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
++    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0, lastShooterId: null, shotX: 450 };
+     let myPos = { x: 150, y: 405, vy: 0, score: 0, energy: 3, isDunking: false, facingRight: true };
+     
+     const playerGravity = 0.6;
+     const ballGravity = 0.35; 
+     const maxBallSpeed = 23; 
+     const playerWidth = 35;
+     const playerHeight = 60;
+     const ballRadius = 12;
+ 
+-    let keys = {}, lastReleaseTime = { KeyA: 0, KeyD: 0 }, lastClickTime = 0;
++    let keys = {}, lastReleaseTime = { KeyA: 0, KeyD: 0 }, lastClickTime = 0, lastStealTime = 0;
+     let isCharging = false, chargeStartTime = 0, mouseX = 0, mouseY = 0;
+     let toast = { text: "", opacity: 0, x: 450, y: 150, color: "#f1c40f" };
+ 
+     function escapeHTML(str) {
+         return str.replace(/[&<>'"]/g, tag => ({
+             '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+         }[tag] || tag));
+     }
+ 
+     function updateEnergyUI(elementId, energyCount) {
+         let html = "";
+         for(let i=0; i<5; i++) html += `<div class="energy-bar ${i < energyCount ? 'energy-filled' : ''}"></div>`;
+         document.getElementById(elementId).innerHTML = html;
+     }
+ 
+     window.joinRoom = function() {
+         playerName = document.getElementById("name").value.trim() || "Player";
+         room = document.getElementById("room").value.trim();
+         if(!room) return;
+         
+         document.getElementById("setup").style.display = "none";
+         document.getElementById("chatContainer").style.display = "flex";
+         document.getElementById("resetBtn").style.display = "block";
+         canvas.focus();
+         
+         onValue(ref(db, `rooms/${room}/players`), s => {
+             players = s.val() || {};
+             updateEnergyUI("myEnergyUI", myPos.energy);
+             Object.keys(players).forEach(id => {
+                 if(id !== playerId) {
+                     document.getElementById("s2").innerText = players[id].score || 0;
+                     updateEnergyUI("enemyEnergyUI", players[id].energy || 0);
+                     if(players[id].score === 0 && myPos.score > 0) { myPos.score = 0; myPos.energy = 3; }
+                 }
+             });
+         });
+ 
+-        onValue(ref(db, `rooms/${room}/ball`), s => { if(s.val() && ball.holder !== playerId) ball = s.val(); });
++        onValue(ref(db, `rooms/${room}/ball`), s => { if(s.val()) ball = s.val(); });
+ 
+         onValue(ref(db, `rooms/${room}/chat`), s => {
+             const chatBox = document.getElementById("chatBox");
+             chatBox.innerHTML = "";
+             const data = s.val();
+             if(data) {
+                 Object.values(data).forEach(m => {
+                     const safeUser = escapeHTML(m.user);
+                     const safeMsg = escapeHTML(m.msg);
+                     const color = safeUser === playerName ? '#3498db' : (safeUser === 'SYSTEM' ? '#e74c3c' : '#95a5a6');
+                     chatBox.innerHTML += `<div style="margin-bottom: 4px;"><strong style="color:${color}">${safeUser}:</strong> ${safeMsg}</div>`;
+                 });
+                 chatBox.scrollTop = chatBox.scrollHeight;
+             }
+         });
+ 
+         gameLoop();
+     };
+ 
+     window.resetArena = function() {
+         myPos.score = 0; myPos.energy = 3;
+-        ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0 };
++        ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0, catchCooldown: 0, lastShooterId: null, shotX: 450 };
+         update(ref(db, `rooms/${room}/ball`), ball);
+         push(ref(db, `rooms/${room}/chat`), { user: "SYSTEM", msg: `🚨 ${playerName} HAS RESET THE GAME! 🚨` });
+         Object.keys(players).forEach(id => { update(ref(db, `rooms/${room}/players/${id}`), { score: 0, energy: 3 }); });
+         showToast("GAME RESET!", "#e74c3c");
+         canvas.focus();
+     };
+ 
+     window.addEventListener("keydown", e => {
+         if(e.code === "Enter") {
+             const input = document.getElementById("chatInput");
+             if(document.activeElement === input) {
+                 if(input.value.trim() !== "") {
+                     push(ref(db, `rooms/${room}/chat`), { user: playerName, msg: input.value.trim() });
+                     input.value = "";
+                 }
+                 input.blur(); canvas.focus();
+             } else {
+                 keys = {}; input.focus();
+             }
+             return;
+         }
+         if(document.activeElement.id === 'chatInput') return;
+         keys[e.code] = true;
+         if(e.code === 'KeyA') myPos.facingRight = false;
+         if(e.code === 'KeyD') myPos.facingRight = true;
++        if(e.code === 'KeyE') attemptSteal();
+         if((e.code === 'KeyA' || e.code === 'KeyD') && myPos.energy >= 1) {
+             if(Date.now() - lastReleaseTime[e.code] < 200) { myPos.x += (e.code === 'KeyD' ? 90 : -90); myPos.energy--; }
+         }
+     });
+ 
+     window.addEventListener("keyup", e => {
+         if(document.activeElement.id === 'chatInput') return;
+         keys[e.code] = false;
+         if(e.code === 'KeyA' || e.code === 'KeyD') lastReleaseTime[e.code] = Date.now();
+     });
+ 
+     canvas.addEventListener("mousemove", e => {
+         const rect = canvas.getBoundingClientRect();
+         mouseX = e.clientX - rect.left; mouseY = e.clientY - rect.top;
+     });
+ 
++    function attemptSteal() {
++        if(myPos.energy < 1 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
++        if(Date.now() - lastStealTime < 500) return;
++        if(!ball.holder || ball.holder === playerId) return;
++
++        const defender = players[ball.holder];
++        if(!defender) return;
++
++        if(Math.hypot(myPos.x - defender.x, myPos.y - defender.y) < 75) {
++            ball.holder = playerId;
++            ball.scored = false;
++            ball.lastShooterId = null;
++            ball.catchCooldown = Date.now() + 150;
++            myPos.energy--;
++            lastStealTime = Date.now();
++            showToast("STEAL!", "#2ecc71");
++            update(ref(db, `rooms/${room}/ball`), ball);
++        }
++    }
++
+     canvas.oncontextmenu = (e) => { 
+         e.preventDefault();
+-        if(myPos.energy < 1 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
+-        Object.keys(players).forEach(id => {
+-            if(id !== playerId && ball.holder === id) {
+-                if(Math.hypot(myPos.x - players[id].x, myPos.y - players[id].y) < 60) {
+-                    ball.holder = playerId; ball.scored = false; myPos.energy--;
+-                    update(ref(db, `rooms/${room}/ball`), ball);
+-                }
+-            }
+-        });
++        attemptSteal();
+     };
+ 
+     canvas.addEventListener("mousedown", e => {
+         if(e.button !== 0 || myPos.isDunking || document.activeElement.id === 'chatInput') return;
+         const now = Date.now();
+         const inPaint = (myPos.x < 150 || myPos.x > 715);
+         if(now - lastClickTime < 300 && inPaint) {
+             isCharging = false; myPos.isDunking = true; ball.holder = null;
+             myPos.vy = -12; 
+             const isLeft = myPos.x < 450;
+             myPos.x = isLeft ? 20 : 845; 
+             ball.x = isLeft ? 20 : 880; ball.y = 220;
+             ball.vx = isLeft ? 5 : -5; ball.vy = 26; 
+             ball.ignoreRim = Date.now() + 500; ball.catchCooldown = Date.now() + 600;
++            ball.lastShooterId = playerId;
++            ball.shotX = myPos.x;
+             showToast("POWER DUNK!!", "#e74c3c");
+             update(ref(db, `rooms/${room}/ball`), ball);
+             setTimeout(() => { myPos.isDunking = false; }, 600);
+         } else if (ball.holder === playerId) {
+             isCharging = true; chargeStartTime = now;
+         }
+         lastClickTime = now;
+     });
+ 
+     window.addEventListener("mouseup", e => {
+         if(e.button === 0 && isCharging && ball.holder === playerId) {
+             isCharging = false;
+             let chargeTime = Math.min((Date.now() - chargeStartTime) / 1000, 1.2); 
+             let powerMultiplier = 0.09 + (chargeTime * 0.13); 
+             let rawVx = (mouseX - myPos.x) * powerMultiplier;
+             let rawVy = (mouseY - myPos.y) * powerMultiplier;
+             let speed = Math.hypot(rawVx, rawVy);
+             if(speed > maxBallSpeed) { ball.vx = (rawVx/speed)*maxBallSpeed; ball.vy = (rawVy/speed)*maxBallSpeed; }
+             else { ball.vx = rawVx; ball.vy = rawVy; }
+             ball.holder = null; ball.catchCooldown = Date.now() + 300;
++            ball.lastShooterId = playerId;
++            ball.shotX = myPos.x;
+             update(ref(db, `rooms/${room}/ball`), ball);
+         }
+     });
+ 
+     function showToast(txt, color = "#f1c40f") { toast = { text: txt, opacity: 1, x: 450, y: 150, color: color }; }
+ 
+     function updateLogic() {
+         if(!myPos.isDunking) {
+             let nextX = myPos.x;
+             if(keys['KeyA']) nextX -= 5; if(keys['KeyD']) nextX += 5;
+             let collision = false;
+             Object.keys(players).forEach(id => {
+                 if(id !== playerId) {
+                     let ex = players[id].x, ey = players[id].y;
+                     if(nextX < ex + playerWidth && nextX + playerWidth > ex && myPos.y < ey + playerHeight && myPos.y + playerHeight > ey) collision = true;
+                 }
+             });
+             if(!collision) myPos.x = nextX;
+             if(keys['KeyW'] && myPos.y >= 405) myPos.vy = -13; 
+         }
+         myPos.vy += playerGravity; myPos.y += myPos.vy;
+         if(myPos.y > 405) { myPos.y = 405; myPos.vy = 0; }
+         if(myPos.x < 0) myPos.x = 0; if(myPos.x > 865) myPos.x = 865;
+ 
+         // --- CONCRETE BALL PHYSICS ---
+         if(!ball.holder) {
+             ball.vy += ballGravity; ball.vx *= 0.99; ball.vy *= 0.99;
+             ball.x += ball.vx; ball.y += ball.vy;
+             
+             // Wall/Floor Concrete Check
+             if(ball.y > 465 - ballRadius) { ball.y = 465 - ballRadius; ball.vy *= -0.6; ball.vx *= 0.8; } 
+             if(ball.y < ballRadius) { ball.y = ballRadius; ball.vy *= -0.5; }
+             if(ball.x < ballRadius) { ball.x = ballRadius; ball.vx *= -0.5; }
+             if(ball.x > 900 - ballRadius) { ball.x = 900 - ballRadius; ball.vx *= -0.5; }
+             
+             if(Date.now() > ball.ignoreRim) {
+                 if(Math.hypot(ball.x-40, ball.y-230) < 15 + ballRadius || Math.hypot(ball.x-860, ball.y-230) < 15 + ballRadius) { 
+                     ball.vx *= -0.6; ball.vy *= -0.6; 
+                     if(ball.x < 450) ball.x += 2; else ball.x -= 2;
+                 }
+             }
+             
+-            if(ball.y > 220 && ball.y < 240 && ball.vy > 0 && !ball.scored) {
+-                if((ball.x < 40 && ball.x > 0) || (ball.x > 860 && ball.x < 900)) {
++            if(ball.y > 215 && ball.y < 250 && ball.vy > 0 && !ball.scored) {
++                if((ball.x < 55 && ball.x > 0) || (ball.x > 845 && ball.x < 900)) {
+                     ball.scored = true; ball.vx *= 0.2; ball.vy *= 0.5; 
+-                    const is3 = (myPos.x > 300 && myPos.x < 600);
+-                    myPos.score += is3 ? 3 : 2; if(myPos.energy < 5) myPos.energy++;
+-                    showToast(is3 ? "3 POINTS! RAINBOW!" : "SWISH!");
++                    const scorerId = ball.lastShooterId;
++                    const shotX = ball.shotX ?? 450;
++                    const is3 = (shotX > 300 && shotX < 600);
++                    if(scorerId && players[scorerId]) {
++                        const scorerScore = (players[scorerId].score || 0) + (is3 ? 3 : 2);
++                        const scorerEnergy = Math.min((players[scorerId].energy || 0) + 1, 5);
++                        update(ref(db, `rooms/${room}/players/${scorerId}`), { score: scorerScore, energy: scorerEnergy });
++                        if(scorerId === playerId) {
++                            myPos.score = scorerScore;
++                            myPos.energy = scorerEnergy;
++                            showToast(is3 ? "3 POINTS! RAINBOW!" : "SWISH!");
++                        }
++                    }
+                 }
+             }
+             
+             if(Date.now() > (ball.catchCooldown || 0)) {
+-                if(Math.hypot(myPos.x+17 - ball.x, myPos.y+30 - ball.y) < 45) { ball.holder = playerId; ball.scored = false; }
++                if(Math.hypot(myPos.x+17 - ball.x, myPos.y+30 - ball.y) < 45) {
++                    ball.holder = playerId;
++                    ball.scored = false;
++                    ball.lastShooterId = null;
++                }
+             }
+         } else if(ball.holder === playerId) { 
+             ball.x = myPos.x + (myPos.facingRight ? 35 : -10); ball.y = myPos.y + 30 + Math.sin(Date.now()/120)*12; 
+         }
+ 
+         update(ref(db, `rooms/${room}/players/${playerId}`), { x: myPos.x, y: myPos.y, score: myPos.score, energy: myPos.energy, name: playerName, isDunking: myPos.isDunking });
+         if(ball.holder === playerId || (!ball.holder && (Math.abs(ball.vx) > 0.1 || Math.abs(ball.vy) > 0.1))) update(ref(db, `rooms/${room}/ball`), ball);
+     }
+ 
+     function draw() {
+         ctx.clearRect(0, 0, canvas.width, canvas.height);
+         ctx.fillStyle = "#ecf0f1"; ctx.fillRect(0, 465, 150, 35); ctx.fillRect(750, 465, 150, 35); 
+         ctx.fillStyle = "#3498db"; ctx.fillRect(150, 465, 150, 35); ctx.fillRect(600, 465, 150, 35); 
+         ctx.fillStyle = "#f1c40f"; ctx.fillRect(300, 465, 300, 35); 
+         ctx.fillStyle = "#e74c3c"; ctx.fillRect(0, 230, 40, 8); ctx.fillRect(860, 230, 40, 8); 
+ 
+         Object.keys(players).forEach(id => {
+             const p = players[id]; ctx.fillStyle = id === playerId ? "#3498db" : "#95a5a6";
+             if(p.isDunking) ctx.fillStyle = "#e74c3c"; 
+             ctx.fillRect(p.x, p.y, playerWidth, playerHeight);
+             ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+             ctx.fillText(p.name, p.x + 17, p.y - 10);
+         });
+ 
+         ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ballRadius, 0, Math.PI*2); ctx.fill(); 
