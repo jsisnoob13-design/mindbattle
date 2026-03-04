@@ -21,7 +21,19 @@
     }
     *{box-sizing:border-box}
     body{margin:0; font-family: Inter, system-ui, "Segoe UI", Roboto, "Noto Sans CJK SC", "Noto Sans", sans-serif; background:linear-gradient(180deg,#eef2f7 0%, #f9fbfd 100%); color:#1f2937; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;}
-    .app{width:1180px; max-width:100%; background:var(--panel); border-radius:12px; box-shadow:var(--shadow); overflow:hidden; display:grid; grid-template-columns:360px 1fr; gap:20px; padding:20px;}
+    /* MAIN APP LAYOUT */
+    .app{
+      width:1400px;
+      max-width:100%;
+      background:var(--panel);
+      border-radius:12px;
+      box-shadow:var(--shadow);
+      overflow:visible;
+      display:grid;
+      grid-template-columns:360px 1fr;
+      gap:20px;
+      padding:20px;
+    }
     .left{display:flex; flex-direction:column; gap:16px}
     .logo{font-weight:700; font-size:18px; color:var(--blackish)}
     .small{color:var(--muted); font-size:13px}
@@ -48,9 +60,37 @@
     .btn.primary{background:#2b7cff; color:white}
     .btn.warn{background:#e74c3c;color:white}
 
-    /* board */
-    .board-wrap{padding:14px; background:var(--board-bg); border-radius:10px; display:flex; gap:16px}
-    .board{width: calc(var(--tile-size) * 8 + var(--tile-gap) * 7); background:transparent; display:grid; grid-template-columns: repeat(8, var(--tile-size)); grid-auto-rows: var(--tile-size); gap: var(--tile-gap);}
+    /* board area */
+    .board-wrap{
+      padding:20px;
+      background:var(--board-bg);
+      border-radius:10px;
+      display:flex;
+      gap:20px;
+      align-items:flex-start;
+      overflow:auto; /* allow scroll rather than collapse */
+    }
+
+    /* IMPORTANT: enforce 8 columns and prevent shrinking */
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, var(--tile-size));
+      grid-auto-rows: var(--tile-size);
+      gap: var(--tile-gap);
+
+      /* ensure the board keeps the full 8-column width and won't collapse */
+      min-width: calc(var(--tile-size) * 8 + var(--tile-gap) * 7);
+      width: min(100%, calc(var(--tile-size) * 8 + var(--tile-gap) * 7));
+      box-sizing: border-box;
+
+      /* make sure it won't force other panels to squish: allow scrolling */
+      overflow-x: auto;
+      overflow-y: visible;
+
+      /* prevent flexbox shrinking */
+      flex: 0 0 auto;
+    }
+
     .tile{display:flex; align-items:center; justify-content:center; border-radius:8px; background:var(--tile-bg); box-shadow: 0 2px 6px rgba(0,0,0,.03); font-size:34px; cursor:pointer; user-select:none; position:relative; transition:all .12s ease}
     .tile.hidden{background:var(--hidden-bg); font-size:32px; color:#556; font-weight:700}
     .tile.empty{background:transparent; box-shadow:none; cursor:default}
@@ -59,6 +99,16 @@
     .tile.revealed .char{font-size:40px; font-weight:700}
     .tile .sub{position:absolute; bottom:6px; right:6px; font-size:10px; color:var(--muted)}
     .tile.empty:after{content:''; display:block; width:100%; height:100%; border:1px dashed rgba(0,0,0,.03); border-radius:8px}
+
+    /* right-side panel (chat + move log) — reserve space so it never collapses */
+    .rightpanel {
+      flex: 0 0 380px;
+      min-width: 360px;
+      box-sizing: border-box;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
 
     /* chat */
     .chatbox{display:flex; flex-direction:column; gap:8px; height:320px}
@@ -81,7 +131,6 @@
       .right{order:1}
       .board{justify-self:center; transform:scale(.9)}
     }
-    /* nice character font fallback for Chinese */
     .char{font-family: "Noto Serif SC", "PingFang SC", "Microsoft YaHei", serif}
   </style>
 </head>
@@ -147,7 +196,8 @@
             <div class="board" id="board"></div>
           </div>
 
-          <div style="width:420px">
+          <!-- RIGHT PANEL: chat + move log; use .rightpanel so it won't collapse -->
+          <div class="rightpanel">
             <div style="font-weight:700; margin-bottom:8px">Chat</div>
             <div class="chatbox">
               <div class="messages" id="messages"></div>
@@ -173,7 +223,7 @@
   <!-- Firebase SDK modular imports -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, set, push, onValue, off, update, runTransaction, remove, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getDatabase, ref, set, push, onValue, off, update, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
     // ---------- Firebase config (same as yours) ----------
     const firebaseConfig = {
@@ -190,18 +240,18 @@
       room: null,
       playerId: randomId(),
       playerName: null,
-      playerColor: null, // 'red' or 'black' assigned when first flip reveals a colored piece belonging to that color
+      playerColor: null,
       joinedAt: null,
-      players: {}, // mirror of players node
-      board: null,  // array length 32 of tiles
-      turnId: null, // playerId of whose turn it is
+      players: {},
+      board: null,
+      turnId: null,
       creatorId: null,
       winner: null,
       selectedIndex: null,
       moveLog: []
     };
 
-    // piece ordering & counts (we will create colored pool)
+    // piece counts
     const PIECE_COUNTS = {
       "将": 1,
       "士": 2,
@@ -213,9 +263,7 @@
     };
     const RED_NAMES = {"兵":"兵","炮":"炮","车":"车","马":"马","象":"象","士":"士","将":"将"};
     const BLACK_NAMES = {"兵":"卒","炮":"炮","车":"車","马":"馬","象":"相","士":"仕","将":"帥"};
-
-    // rank mapping (higher = stronger), soldier has rank 1, general 7
-    const RANK = {"将":7,"帥":7,"将_red":7,"帅":7,"士":6,"仕":6,"象":5,"相":5,"馬":4,"马":4,"車":3,"车":3,"炮":2,"兵":1,"卒":1};
+    const RANK = {"将":7,"士":6,"象":5,"马":4,"車":3,"车":3,"炮":2,"兵":1,"卒":1};
 
     // DOM refs
     const joinCard = document.getElementById('joinCard');
@@ -235,7 +283,6 @@
     const sendBtn = document.getElementById('sendBtn');
     const rematchBtn = document.getElementById('rematchBtn');
     const leaveBtn = document.getElementById('leaveBtn');
-    const roomLabelTitle = document.getElementById('roomLabel');
     const moveLogEl = document.getElementById('moveLog');
     const copyCodeBtn = document.getElementById('copyCodeBtn');
 
@@ -243,11 +290,10 @@
     joinBtn.onclick = joinRoom;
     sendBtn.onclick = sendChat;
     chatInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') sendChat(); });
-    copyCodeBtn.onclick = () => { if(state.room) navigator.clipboard?.writeText(state.room).then(()=>alert('Copied code')); };
+    copyCodeBtn && (copyCodeBtn.onclick = () => { if(state.room) navigator.clipboard?.writeText(state.room).then(()=>alert('Copied code')); });
     rematchBtn.onclick = requestRematch;
     leaveBtn.onclick = leaveRoom;
 
-    // tile click delegation (boardEl children are dynamic)
     boardEl.addEventListener('click', (ev) => {
       const t = ev.target.closest('.tile');
       if(!t) return;
@@ -256,66 +302,36 @@
       onTileClicked(idx);
     });
 
-    // ---------- helper functions ----------
-    function randomId() {
-      return Math.random().toString(36).slice(2,10);
-    }
-
-    function now() { return Date.now(); }
-
+    // helper
+    function randomId(){ return Math.random().toString(36).slice(2,10); }
     function safeName(n){ return (n||'Player').substring(0,20).replace(/</g,'').replace(/>/g,''); }
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[ch])); }
+    function pushMoveLog(text){ state.moveLog.unshift({t: Date.now(), text}); renderMoveLog(); }
+    function renderMoveLog(){ moveLogEl.innerHTML = state.moveLog.slice(0,40).map(m=>`<div style="padding:4px 0;border-bottom:1px dashed #f2f4f6;font-size:13px">${escapeHtml(m.text)}</div>`).join(''); }
 
-    function emptyTile(){ return { piece:null, color:null, revealed:true }; }
-    function hiddenTile(piece=null,color=null){
-      return { piece: piece, color: color, revealed:false };
-    }
+    // tile constructors
+    function hiddenTile(piece=null,color=null){ return { piece: piece, color: color, revealed:false }; }
 
-    function shallowCopyBoard(b){ return b ? b.map(x => (x? {...x} : null)) : null; }
-
-    // convert internal tile -> display character (Chinese char with appropriate display)
+    // char display
     function tileChar(tile){
       if(!tile) return '';
       if(tile.piece === null) return '';
       const p = tile.piece;
       const color = tile.color;
-      if(color === 'red'){
-        return RED_NAMES[p] || p;
-      } else if(color === 'black'){
-        // use black variants (卒/相 etc)
-        return BLACK_NAMES[p] || p;
-      } else {
-        return p;
-      }
+      if(color === 'red') return RED_NAMES[p] || p;
+      if(color === 'black') return BLACK_NAMES[p] || p;
+      return p;
     }
 
-    // rank getter: normalize defender side characters to canonical names
-    function canonical(piece, color){
-      // piece stored always as canonical Chinese piece char in piece property: one of 将 士 象 马 车 炮 兵
-      // For black we keep same canonical piece name (兵/将 etc) — tile color separates display naming
-      return piece;
-    }
-
-    function rankOf(pieceName){
-      if(!pieceName) return -999;
-      // pieceName expected to be one of keys in RANK mapping; map both forms
-      if(RANK[pieceName] !== undefined) return RANK[pieceName];
-      // fallback mapping English to Chinese if needed
-      return RANK[pieceName] || 0;
-    }
-
-    // capture allowed logic (returns boolean)
+    function rankOf(pieceName){ return RANK[pieceName] || 0; }
     function canCapture(attackerPiece, defenderPiece){
       if(!attackerPiece || !defenderPiece) return false;
-      // special soldier > general
       if(attackerPiece === '兵' && defenderPiece === '将') return true;
-      // general cannot capture soldier
       if(attackerPiece === '将' && defenderPiece === '兵') return false;
-      // attacker wins ties (attacker rank >= defender rank)
       const aRank = rankOf(attackerPiece);
       const dRank = rankOf(defenderPiece);
       return aRank >= dRank;
     }
-
     function neighbors(index){
       const r = Math.floor(index / 8), c = index % 8;
       const list=[];
@@ -325,132 +341,70 @@
       if(c<7) list.push(index + 1);
       return list;
     }
+    function otherPlayerId(){ const keys = Object.keys(state.players||{}).filter(id=>id!==state.playerId); return keys.length? keys[0] : null; }
 
-    function isOwnTile(tile){ return tile && tile.color && state.playerColor && tile.color === state.playerColor; }
-
-    function otherPlayerId(){
-      const keys = Object.keys(state.players||{}).filter(id=>id!==state.playerId);
-      return keys.length? keys[0] : null;
-    }
-
-    function pushMoveLog(text){
-      state.moveLog.unshift({t: Date.now(), text});
-      renderMoveLog();
-    }
-    function renderMoveLog(){
-      moveLogEl.innerHTML = state.moveLog.slice(0,40).map(m=>`<div style="padding:4px 0;border-bottom:1px dashed #f2f4f6;font-size:13px">${escapeHtml(m.text)}</div>`).join('');
-    }
-
-    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[ch])); }
-
-    // ---------- board creation / shuffle ----------
+    // board creation
     function makePiecePool(){
-      // create pool of 16 red pieces and 16 black pieces by counts defined
       const pool = [];
-      Object.keys(PIECE_COUNTS).forEach(p => {
-        const cnt = PIECE_COUNTS[p];
-        for(let i=0;i<cnt;i++){
-          pool.push({piece: p, color:'red'});
-        }
-      });
-      // red pool length 16
+      Object.keys(PIECE_COUNTS).forEach(p => { for(let i=0;i<PIECE_COUNTS[p];i++) pool.push({piece: p, color:'red'}); });
       const poolBlack = [];
-      Object.keys(PIECE_COUNTS).forEach(p => {
-        const cnt = PIECE_COUNTS[p];
-        for(let i=0;i<cnt;i++){
-          poolBlack.push({piece: p, color:'black'});
-        }
-      });
-      // merge and shuffle total 32
+      Object.keys(PIECE_COUNTS).forEach(p => { for(let i=0;i<PIECE_COUNTS[p];i++) poolBlack.push({piece: p, color:'black'}); });
       const merged = pool.concat(poolBlack);
-      shuffleArray(merged);
+      for(let i=merged.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [merged[i],merged[j]]=[merged[j],merged[i]]; }
       return merged;
     }
 
-    function shuffleArray(a){
-      for(let i=a.length-1;i>0;i--){
-        const j = Math.floor(Math.random()*(i+1));
-        const t = a[i]; a[i]=a[j]; a[j]=t;
-      }
-    }
-
     async function createAndWriteBoard(room){
-      // only call if board absent and you are first player
       const items = makePiecePool();
       const board = [];
       for(let i=0;i<32;i++){
         const it = items[i];
         board.push(hiddenTile(it.piece, it.color));
       }
-      // write board and default state: turn set to creator (state.playerId)
       await set(ref(db, `rooms/${room}/board`), board);
       await set(ref(db, `rooms/${room}/turn`), state.playerId);
       await set(ref(db, `rooms/${room}/creator`), state.playerId);
       await set(ref(db, `rooms/${room}/winner`), null);
       await set(ref(db, `rooms/${room}/rematch`), null);
-      // note: players node created separately by joinRoom
       pushMoveLog('Board created and shuffled.');
     }
 
-    // ---------- player actions ----------
+    // actions
     async function onTileClicked(idx){
-      // local snapshot in state.board
       if(!state.board) return;
-      if(state.winner) return; // game over
+      if(state.winner) return;
       const tile = state.board[idx];
-      // must be player's turn
-      if(state.turnId !== state.playerId){ return; } // ignore clicks when not your turn
-      // if tile is hidden -> flip (flip consumes turn)
-      if(!tile.revealed){
-        await flipTile(idx);
-        return;
-      }
-      // if tile is empty -> nothing (click nothing)
+      if(state.turnId !== state.playerId) return;
+      if(!tile.revealed){ await flipTile(idx); return; }
       if(tile.piece === null){
-        // if we have a selection, maybe move there (but tile empty, so move allowed only if selected piece belongs to us)
-        if(state.selectedIndex !== null){
-          await attemptMove(state.selectedIndex, idx);
-        }
+        if(state.selectedIndex !== null){ await attemptMove(state.selectedIndex, idx); }
         return;
       }
-      // tile is revealed piece
-      // if it is your piece => select it (select to show moves)
       if(tile.color && tile.color === state.playerColor){
-        // select (if already selected same index, deselect)
         if(state.selectedIndex === idx){ state.selectedIndex = null; renderBoard(); return; }
-        state.selectedIndex = idx;
-        renderBoard();
-        return;
+        state.selectedIndex = idx; renderBoard(); return;
       } else {
-        // opponent's revealed piece clicked
-        // if we have a selected own piece and capture allowed from selection -> attempt capture
-        if(state.selectedIndex !== null){
-          await attemptMove(state.selectedIndex, idx);
-          return;
-        } else {
-          // clicking opponent piece while not selected: no action
-          return;
-        }
+        if(state.selectedIndex !== null){ await attemptMove(state.selectedIndex, idx); return; }
+        return;
       }
     }
 
     async function flipTile(idx){
       const tile = state.board[idx];
       if(!tile || tile.revealed) return;
-      // flip action consumes turn: apply locally and write to DB
-      // When flipping first time for player, assign player's color to the tile.color if state.playerColor null
+      // reveal on DB
       const updates = {};
-      // reveal tile
       updates[`rooms/${state.room}/board/${idx}/revealed`] = true;
-      // mark revealed value (Firebase needs nested path per item)
       await update(ref(db), updates);
-      pushMoveLog(`${state.playerName} flipped tile ${idx} → ${tile.charInfo? tile.charInfo : tile.piece} (${tile.color})`);
-      // assign player color if not assigned
-      if(!state.playerColor){
-        // but color set only after we observe the board update via onValue; but we proactively set players node color to tile.color
-        await update(ref(db, `rooms/${state.room}/players/${state.playerId}`), { color: tile.color });
+      pushMoveLog(`${state.playerName} flipped tile ${idx} → ${tile.piece} (${tile.color})`);
+      // assign player color if none
+      const myPRef = ref(db, `rooms/${state.room}/players/${state.playerId}`);
+      const pSnap = await new Promise(res => { onValue(myPRef, s => res(s), {onlyOnce:true}); });
+      const curr = pSnap.val() || {};
+      if(!curr.color && tile.color){
+        await update(myPRef, { color: tile.color });
       }
-      // end turn: set turn to other player (if any)
+      // advance turn
       const other = otherPlayerId();
       await set(ref(db, `rooms/${state.room}/turn`), other || state.playerId);
     }
@@ -459,159 +413,96 @@
       if(state.winner) return;
       const from = state.board[fromIdx];
       const to = state.board[toIdx];
-      if(!from || !from.revealed || !from.piece) return; // nothing to move
-      if(from.color !== state.playerColor) return; // not your piece
-      // check adjacency
+      if(!from || !from.revealed || !from.piece) return;
+      if(from.color !== state.playerColor) return;
       if(!neighbors(fromIdx).includes(toIdx)) return;
-      // cannot move into hidden tile
       if(to && !to.revealed) return;
-      // if to empty -> move allowed
       if(!to || to.piece === null){
-        // apply move
         const updates = {};
         updates[`rooms/${state.room}/board/${toIdx}`] = { piece: from.piece, color: from.color, revealed: true };
         updates[`rooms/${state.room}/board/${fromIdx}`] = { piece: null, color: null, revealed: true };
         await update(ref(db), updates);
         pushMoveLog(`${state.playerName} moved ${from.piece} from ${fromIdx} → ${toIdx}`);
-        // clear selection
         state.selectedIndex = null;
-        // switch turn
         const other = otherPlayerId();
         await set(ref(db, `rooms/${state.room}/turn`), other || state.playerId);
         return;
       }
-      // capture attempt
       if(to.piece && to.color && to.color !== from.color){
-        // validate capture rule
         if(canCapture(from.piece, to.piece)){
-          // if capturing a general => game over
           const isGeneral = (to.piece === '将');
           const updates = {};
           updates[`rooms/${state.room}/board/${toIdx}`] = { piece: from.piece, color: from.color, revealed: true };
           updates[`rooms/${state.room}/board/${fromIdx}`] = { piece: null, color: null, revealed: true };
           await update(ref(db), updates);
           pushMoveLog(`${state.playerName} captured ${to.piece} at ${toIdx} with ${from.piece}`);
-          // set winner if general captured
           if(isGeneral){
             await set(ref(db, `rooms/${state.room}/winner`), { winnerId: state.playerId, winnerName: state.playerName });
-            // allow moves halted by winner detection in onValue listener
           } else {
-            // normal capture; switch turn
             const other = otherPlayerId();
             await set(ref(db, `rooms/${state.room}/turn`), other || state.playerId);
           }
           state.selectedIndex = null;
           return;
         } else {
-          // invalid capture not allowed (attacker weaker)
-          // we won't allow capturing; clicks ignored (or show toast)
           alert('Invalid capture: attacker cannot capture this piece.');
           return;
         }
       }
     }
 
-    // ---------- join / leave / presence ----------
+    // join / leave
     async function joinRoom(){
       const name = safeName((nameInput.value||'').trim()) || ('Player'+state.playerId.slice(0,3));
       const room = (roomInput.value||'').trim();
       if(!room){ alert('Please enter a room code'); return; }
+      // check players count first
+      const playersRef = ref(db, `rooms/${room}/players`);
+      const snap = await new Promise(res => { onValue(playersRef, s => res(s), {onlyOnce:true}); });
+      const existing = snap.val() || {};
+      if(Object.keys(existing).length >= 2){
+        alert('Room is full. Choose another code.');
+        return;
+      }
       state.playerName = name;
       state.room = room;
       state.joinedAt = Date.now();
-      // write presence
       const playerRef = ref(db, `rooms/${room}/players/${state.playerId}`);
-      await set(playerRef, { id: state.playerId, name: state.playerName, color: null, joinedAt: state.joinedAt, lastSeen: serverTime() });
-      // onDisconnect remove us
-      try{
-        playerRef.onDisconnect().remove();
-      }catch(e){
-        // ignore
-      }
-      // show UI
+      await set(playerRef, { id: state.playerId, name: state.playerName, color: null, joinedAt: state.joinedAt, lastSeen: Date.now() });
+      try{ playerRef.onDisconnect().remove(); }catch(e){}
       joinCard.style.display = 'none';
       playersCard.style.display = 'block';
       boardWrap.style.display = 'block';
       roomLabel.textContent = `Room: ${room}`;
-      // listen players list
       onValue(ref(db, `rooms/${room}/players`), snap => {
         const val = snap.val() || {};
         state.players = val;
         renderPlayers();
-        // if we are first (only player) and board missing, create board
         if(Object.keys(val).length === 1){
           ensureBoardExists(room);
         }
-        // if players count becomes 1 (opponent left) and game ongoing => award win
         const keys = Object.keys(val);
         if(keys.length === 1 && state.winner == null){
-          // award win after slight delay to avoid race on quick reconnect
           const remainingId = keys[0];
-          if(remainingId !== state.playerId){
-            // someone else remains; if we left, nothing
-          } else {
-            // we remain alone => set winner to us
+          if(remainingId === state.playerId){
             set(ref(db, `rooms/${room}/winner`), { winnerId: state.playerId, winnerName: state.playerName });
           }
         }
+        // show game header when there are players
+        document.getElementById('gameHeader').style.display = 'flex';
       });
-      // listen board changes
-      onValue(ref(db, `rooms/${room}/board`), snap => {
-        const board = snap.val();
-        state.board = board || null;
-        renderBoard();
-      });
-      // listen turn
-      onValue(ref(db, `rooms/${room}/turn`), snap => {
-        state.turnId = snap.val();
-        renderTurn();
-      });
-      // listen winner
-      onValue(ref(db, `rooms/${room}/winner`), snap => {
-        state.winner = snap.val();
-        if(state.winner){
-          showWinnerModal(state.winner);
-        } else {
-          removeWinnerModal();
-        }
-      });
-      // listen chat
-      onValue(ref(db, `rooms/${room}/chat`), snap => {
-        const data = snap.val() || {};
-        renderChat(data);
-      });
-      // listen rematch signal (we'll simply reset board when rematch triggered)
-      onValue(ref(db, `rooms/${room}/rematch`), snap => {
-        const data = snap.val();
-        if(data){
-          // rematch requested: re-create board if present
-          ensureBoardExists(room, {forceReset:true});
-        }
-      });
-      // keep local player color mirrored from DB
-      onValue(ref(db, `rooms/${room}/players/${state.playerId}`), snap => {
-        const p = snap.val();
-        if(p){
-          state.playerColor = p.color || state.playerColor;
-          renderPlayers();
-          renderTurn();
-        }
-      });
-      // move log can be tracked locally only; chat messages persisted server-side
+      onValue(ref(db, `rooms/${room}/board`), snap => { state.board = snap.val() || null; renderBoard(); });
+      onValue(ref(db, `rooms/${room}/turn`), snap => { state.turnId = snap.val(); renderTurn(); });
+      onValue(ref(db, `rooms/${room}/winner`), snap => { state.winner = snap.val(); if(state.winner) showWinnerModal(state.winner); else removeWinnerModal(); });
+      onValue(ref(db, `rooms/${room}/chat`), snap => { renderChat(snap.val() || {}); });
+      onValue(ref(db, `rooms/${room}/rematch`), snap => { const data = snap.val(); if(data) ensureBoardExists(room, {forceReset:true}); });
+      onValue(ref(db, `rooms/${room}/players/${state.playerId}`), snap => { const p = snap.val(); if(p){ state.playerColor = p.color || state.playerColor; renderPlayers(); renderTurn(); } });
       pushMoveLog(`${state.playerName} joined room ${room}`);
-    }
-
-    function serverTime(){
-      // using server timestamp object is not suitable inside set values here; we'll use Date.now for client timestamps
-      return Date.now();
     }
 
     async function leaveRoom(){
       if(!state.room) return;
-      // remove player node
       await remove(ref(db, `rooms/${state.room}/players/${state.playerId}`));
-      // if we were creator and other player exists, other player becomes winner via onValue logic
-      // cleanup local state
       cleanupLocalListeners();
       resetLocalUI();
     }
@@ -634,19 +525,18 @@
       boardWrap.style.display = 'none';
       roomLabel.textContent = `Room: —`;
       boardEl.innerHTML = ''; messagesEl.innerHTML=''; playersList.innerHTML=''; renderMoveLog();
+      document.getElementById('gameHeader').style.display = 'none';
     }
 
-    // ---------- ensure board exists (create by first client) ----------
     async function ensureBoardExists(room,{forceReset=false} = {}){
       const bRef = ref(db, `rooms/${room}/board`);
-      const snap = await new Promise(res => { onValue(bRef, s => { res(s); }, {onlyOnce:true}); });
+      const snap = await new Promise(res => { onValue(bRef, s => res(s), {onlyOnce:true}); });
       if(!snap.exists() || forceReset){
-        // create board (only one client should succeed race will be last-write wins but that's fine)
         await createAndWriteBoard(room);
       }
     }
 
-    // ---------- chat ----------
+    // chat
     async function sendChat(){
       if(!state.room) return;
       const txt = (chatInput.value||'').trim();
@@ -667,12 +557,10 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
-    // ---------- rematch ----------
+    // rematch
     async function requestRematch(){
       if(!state.room) return;
-      // setting rooms/{room}/rematch to current timestamp will trigger other clients to reset board
       await set(ref(db, `rooms/${state.room}/rematch`), { by: state.playerId, at: Date.now() });
-      // reset players color fields to null so first flip decides colors again
       const playersKeys = Object.keys(state.players || {});
       const updates = {};
       playersKeys.forEach(id => updates[`rooms/${state.room}/players/${id}/color`] = null);
@@ -680,7 +568,7 @@
       pushMoveLog(`${state.playerName} requested rematch.`);
     }
 
-    // ---------- rendering functions ----------
+    // rendering
     function renderPlayers(){
       playersList.innerHTML = Object.keys(state.players||{}).map(id=>{
         const p = state.players[id];
@@ -693,7 +581,6 @@
     function renderBoard(){
       boardEl.innerHTML = '';
       if(!state.board){
-        // show placeholder grid
         for(let i=0;i<32;i++){
           const el = document.createElement('div'); el.className='tile hidden'; el.textContent='■'; el.dataset.index = i;
           boardEl.appendChild(el);
@@ -707,36 +594,28 @@
         el.dataset.index = i;
         if(!t || t.piece === null){
           el.classList.add('empty');
-          el.innerHTML = ''; // empty
+          el.innerHTML = '';
         } else if(!t.revealed){
           el.classList.add('hidden');
           el.innerHTML = '<div style="font-size:20px">■</div>';
         } else {
           el.classList.add('revealed');
           const ch = tileChar(t);
-          // color display
           const colorStyle = (t.color === 'red') ? `color:var(--red)` : `color:var(--blackish)`;
           el.innerHTML = `<div class="char" style="${colorStyle}">${escapeHtml(ch)}</div><div class="sub">${t.color}</div>`;
         }
-
-        // selection highlight
         if(state.selectedIndex === i) el.classList.add('selected');
-
-        // green move tiles if selected and valid
         if(state.selectedIndex !== null && state.board[state.selectedIndex] && state.board[state.selectedIndex].color === state.playerColor){
           const allowed = neighbors(state.selectedIndex).filter(n=>{
             const tileTo = state.board[n];
-            if(!tileTo) return true; // empty treated as available
+            if(!tileTo) return true;
             if(!tileTo.revealed) return false;
             if(tileTo.piece === null) return true;
-            // enemy capture allowed?
             if(tileTo.color !== state.playerColor) return canCapture(state.board[state.selectedIndex].piece, tileTo.piece);
             return false;
           });
           if(allowed.includes(i)) el.classList.add('green');
         }
-
-        // click hints for hidden tile or others
         boardEl.appendChild(el);
       }
     }
@@ -757,7 +636,6 @@
       const name = who.name || 'Player';
       const colorDotColor = color === 'red' ? 'var(--red)' : (color === 'black' ? 'var(--blackish)' : '#cbd5e1');
       turnDot.style.background = colorDotColor;
-      // nice phrasing: if it's me show "Your turn"
       if(state.turnId === state.playerId){
         turnText.textContent = `Your turn — ${name}`;
       } else {
@@ -765,9 +643,8 @@
       }
     }
 
-    // ---------- winner modal ----------
+    // winner modal
     function showWinnerModal(winnerObj){
-      // winnerObj structure: { winnerId, winnerName } or string as fallback
       removeWinnerModal();
       const modalWrap = document.getElementById('modalHost');
       const el = document.createElement('div');
@@ -785,36 +662,18 @@
       document.getElementById('modalRematch').onclick = async () => { await requestRematch(); removeWinnerModal(); };
       document.getElementById('modalLeave').onclick = async () => { await leaveRoom(); removeWinnerModal(); };
     }
-    function removeWinnerModal(){
-      const host = document.getElementById('modalHost');
-      host.innerHTML = '';
-    }
+    function removeWinnerModal(){ const host = document.getElementById('modalHost'); host.innerHTML = ''; }
 
-    // ---------- utility: load initial style board of hidden tiles (before DB arrives) ----------
-    (function initSkeleton(){
-      boardEl.innerHTML = '';
-      for(let i=0;i<32;i++){
-        const el = document.createElement('div'); el.className='tile hidden'; el.textContent='■'; el.dataset.index = i;
-        boardEl.appendChild(el);
-      }
-    })();
+    // initial skeleton
+    (function initSkeleton(){ boardEl.innerHTML = ''; for(let i=0;i<32;i++){ const el = document.createElement('div'); el.className='tile hidden'; el.textContent='■'; el.dataset.index = i; boardEl.appendChild(el); } })();
 
-    // ---------- small helper: when script starts clear any leftover ephemeral rematch value older than day (not necessary but tidy) ----------
-    // (left out intentionally for simplicity)
-
-    // ---------- on unload: remove presence (best-effort) ----------
+    // unload cleanup
     window.addEventListener('beforeunload', async () => {
       if(state.room && state.playerId){
         try{ await remove(ref(db, `rooms/${state.room}/players/${state.playerId}`)); }catch(e){}
       }
     });
 
-    // ---------- small UI helpers for initial info visibility ----------
-    // show players card when joined
-    onValue(ref(db, '/'), ()=>{}); // keep connection warm
-
-    // ---------- final note: keep the code readable; ready for production improvements ----------
-    // End of module
   </script>
 </body>
 </html>
