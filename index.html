@@ -3,54 +3,107 @@
 <head>
     <title>Mind Battle: Gun Edition</title>
     <style>
-        body { font-family: 'Segoe UI', Arial; text-align: center; background: #1a1a1a; color: white; padding: 20px; }
-        .container { max-width: 500px; margin: auto; background: #2a2a2a; padding: 20px; border-radius: 15px; }
-        button { padding: 12px; margin: 5px; font-size: 16px; cursor: pointer; border-radius: 8px; border: none; transition: 0.2s; }
-        button:hover { opacity: 0.8; }
-        .btn-action { background: #444; color: white; }
-        #chatBox { height: 120px; overflow-y: auto; border: 1px solid #444; margin: 15px 0; padding: 10px; text-align: left; background: #000; }
-        .hp-bar { font-size: 20px; color: #ff4757; margin: 10px 0; }
-        .status-msg { font-weight: bold; color: #eccc68; min-height: 24px; }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            text-align: center;
+            background: #111;
+            color: white;
+            padding: 20px;
+        }
+        .game-container {
+            max-width: 500px;
+            margin: auto;
+            background: #222;
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid #444;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #444;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover { background: #666; }
+        .btn-gun { background: #d63031; }
+        .btn-gun:hover { background: #ff7675; }
+        
+        #chatBox {
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            background: #000;
+            margin: 15px 0;
+            padding: 10px;
+            text-align: left;
+            font-size: 14px;
+        }
+        #history {
+            height: 100px;
+            overflow-y: auto;
+            border: 1px solid #333;
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 10px;
+        }
+        .hp-display { font-size: 20px; margin: 10px 0; }
+        input {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+            margin: 5px;
+        }
+        #status { color: #fdcb6e; font-weight: bold; }
     </style>
 </head>
 <body>
 
-<div class="container">
+<div class="game-container">
     <h1>Mind Battle ⚔️</h1>
-    
+
     <div id="setup">
         <input id="name" placeholder="Your Name">
         <input id="room" placeholder="Room Code">
-        <button onclick="joinRoom()" style="background: #2ed573;">Join Game</button>
+        <br>
+        <button onclick="joinRoom()" style="background: #00b894;">Join Game</button>
     </div>
 
     <div id="gameArea" style="display:none;">
-        <div class="status-msg" id="status">Waiting for opponent...</div>
-        
-        <div>
-            <p>Opponent HP: <span id="enemyHpDisplay"></span></p>
-            <div class="hp-bar" id="enemyHearts"></div>
-        </div>
+        <h3 id="status">Waiting for players...</h3>
+        <p id="enemyStatus">Choose your action!</p>
 
-        <hr>
-
-        <div>
-            <p>Your HP: <span id="hpDisplay"></span></p>
-            <div class="hp-bar" id="myHearts"></div>
-            <div id="gunStatus" style="font-size: 12px; color: #ffa502;"></div>
+        <div class="hp-section">
+            <div>Opponent: <span id="enemyHpNum">10</span>/10</div>
+            <div id="enemyHpDisplay" class="hp-display"></div>
+            <hr style="border: 0.5px solid #444">
+            <div>You: <span id="hpNum">10</span>/10</div>
+            <div id="hpDisplay" class="hp-display"></div>
         </div>
 
         <div id="controls">
-            <button class="btn-action" onclick="sendAction('rock')">🪨 Rock</button>
-            <button class="btn-action" onclick="sendAction('paper')">📄 Paper</button>
-            <button class="btn-action" onclick="sendAction('scissors')">✂️ Scissors</button>
-            <button class="btn-action" style="background: #eb4d4b;" onclick="sendAction('gun')">🔫 Gun</button>
+            <button onclick="sendAction('rock')">🪨 Rock</button>
+            <button onclick="sendAction('paper')">📄 Paper</button>
+            <button onclick="sendAction('scissors')">✂️ Scissors</button>
+            <button class="btn-gun" onclick="sendAction('gun')">🔫 Gun</button>
         </div>
+        <p id="gunStatus" style="font-size: 12px; color: #fab1a0;"></p>
 
-        <h3 id="log">Choose your move!</h3>
+        <h4 id="log">---</h4>
+        
+        <div id="history"></div>
 
+        <button id="newGameBtn" onclick="newGame()" style="display:none; background: #0984e3; width: 100%;">Play Again</button>
+
+        <hr>
+        <h4>Chat</h4>
         <div id="chatBox"></div>
-        <input id="chatInput" placeholder="Say something...">
+        <input id="chatInput" placeholder="Press Enter to send..." style="width: 70%;">
         <button onclick="sendChat()">Send</button>
     </div>
 </div>
@@ -59,7 +112,6 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-    // Your Firebase Config (Keep this as is)
     const firebaseConfig = {
         apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
         authDomain: "mindbattle-f00a3.firebaseapp.com",
@@ -75,117 +127,137 @@
 
     let room = "";
     let playerName = "";
-    let playerId = Math.random().toString(36).substring(7);
-    let hp = 10, enemyHp = 10, gunCooldown = 0;
+    let playerId = Math.random().toString(36).substring(2);
+    let hp = 10, enemyHp = 10, gunCooldown = 0, round = 1;
 
     window.joinRoom = function() {
         playerName = document.getElementById("name").value || "Player";
         room = document.getElementById("room").value;
-        if(!room) return alert("Enter a room code");
-        
+        if (!room) return alert("Enter a room code!");
+
         document.getElementById("setup").style.display = "none";
         document.getElementById("gameArea").style.display = "block";
-        
+        document.getElementById("status").innerText = "Room: " + room;
+
+        document.getElementById("chatInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") sendChat();
+        });
+
         listenActions();
         listenChat();
         updateUI();
     };
 
-    function updateUI() {
-        document.getElementById("myHearts").innerText = "❤️".repeat(hp);
-        document.getElementById("enemyHearts").innerText = "❤️".repeat(enemyHp);
-        document.getElementById("hpDisplay").innerText = hp;
-        document.getElementById("enemyHpDisplay").innerText = enemyHp;
-        document.getElementById("gunStatus").innerText = gunCooldown > 0 ? `Gun Cooldown: ${gunCooldown} rounds` : "Gun Ready!";
-    }
+    window.sendAction = function(action) {
+        if (hp <= 0 || enemyHp <= 0) return;
+        if (action === "gun" && gunCooldown > 0) return alert("Gun on cooldown!");
 
-    window.sendAction = function(move) {
-        if(move === 'gun' && gunCooldown > 0) return alert("Gun is cooling down!");
-        
         set(ref(db, `rooms/${room}/actions/${playerId}`), {
-            move: move,
-            name: playerName
+            name: playerName,
+            player: playerId,
+            action: action
         });
-        document.getElementById("status").innerText = "Locked in! Waiting...";
-    }
+        document.getElementById("enemyStatus").innerText = "Locked in! Waiting for opponent...";
+    };
 
     function listenActions() {
         onValue(ref(db, `rooms/${room}/actions`), (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
-            const keys = Object.keys(data);
+            const players = Object.keys(data);
+            if (players.length < 2) return;
+
+            const p1 = data[players[0]];
+            const p2 = data[players[1]];
             
-            if (keys.length === 2) {
-                const p1 = data[keys[0]];
-                const p2 = data[keys[1]];
-                
-                // Logic resolution (only one player needs to trigger the "cleanup")
-                resolveRound(keys[0] === playerId ? p1.move : p2.move, keys[0] === playerId ? p2.move : p1.move);
-                
-                // Clear actions for next round after a delay
-                setTimeout(() => {
-                    remove(ref(db, `rooms/${room}/actions`));
-                    document.getElementById("status").innerText = "New Round - Fight!";
-                }, 2000);
-            }
+            resolveBattle(p1, p2);
+            
+            setTimeout(() => {
+                remove(ref(db, `rooms/${room}/actions`));
+                if (hp > 0 && enemyHp > 0) document.getElementById("enemyStatus").innerText = "Next Round! Choose:";
+            }, 1500);
         });
     }
 
-    function resolveRound(myMove, enemyMove) {
-        let result = "Draw";
-        
-        // Gun Logic: Gun beats everything except another Gun
+    function resolveBattle(p1, p2) {
+        let myMove = p1.player === playerId ? p1.action : p2.action;
+        let enemyMove = p1.player === playerId ? p2.action : p1.action;
+        let enemyName = p1.player === playerId ? p2.name : p1.name;
+        let resultMsg = "";
+
         if (myMove === "gun" && enemyMove !== "gun") {
-            enemyHp--; result = "You WIN this round! 🔫";
+            enemyHp--; resultMsg = "GUN beats everything! Point for you.";
         } else if (enemyMove === "gun" && myMove !== "gun") {
-            hp--; result = "Opponent used GUN! 💀";
+            hp--; resultMsg = enemyName + " used GUN! You took damage.";
         } else if (myMove === enemyMove) {
-            result = "Draw! 🤝";
-        } 
-        // Standard RPS Logic
-        else if (
+            resultMsg = "Both chose " + myMove + ". Draw!";
+        } else if (
             (myMove === "rock" && enemyMove === "scissors") ||
             (myMove === "paper" && enemyMove === "rock") ||
             (myMove === "scissors" && enemyMove === "paper")
         ) {
-            enemyHp--; result = "You Win! 🎉";
+            enemyHp--; resultMsg = "You won this round!";
         } else {
-            hp--; result = "You Lose! 😢";
+            hp--; resultMsg = enemyName + " won this round.";
         }
 
-        // Manage Gun Cooldown
-        if (myMove === "gun") gunCooldown = 4; // Use + 3 rounds
+        if (myMove === "gun") gunCooldown = 4;
         if (gunCooldown > 0) gunCooldown--;
 
-        document.getElementById("log").innerText = `${myMove.toUpperCase()} vs ${enemyMove.toUpperCase()} : ${result}`;
+        document.getElementById("log").innerText = myMove.toUpperCase() + " vs " + enemyMove.toUpperCase();
+        const hist = document.getElementById("history");
+        hist.innerHTML = `<div>R${round}: ${resultMsg}</div>` + hist.innerHTML;
+        round++;
         updateUI();
-        checkGameOver();
-    }
-
-    function checkGameOver() {
-        if (hp <= 0) alert("GAME OVER - YOU LOST");
-        if (enemyHp <= 0) alert("VICTORY - YOU WON");
     }
 
     window.sendChat = function() {
-        const msg = document.getElementById("chatInput").value;
-        if(!msg) return;
-        push(ref(db, `rooms/${room}/chat`), { name: playerName, text: msg });
-        document.getElementById("chatInput").value = "";
+        const input = document.getElementById("chatInput");
+        if (!input.value.trim()) return;
+        push(ref(db, `rooms/${room}/chat`), { name: playerName, text: input.value });
+        input.value = "";
     };
 
     function listenChat() {
         onValue(ref(db, `rooms/${room}/chat`), (snapshot) => {
             const data = snapshot.val();
-            if(!data) return;
+            if (!data) { document.getElementById("chatBox").innerHTML = ""; return; }
             let html = "";
-            Object.values(data).slice(-5).forEach(m => {
-                html += `<div><strong>${m.name}:</strong> ${m.text}</div>`;
+            Object.values(data).slice(-15).forEach(m => {
+                html += `<div><b>${m.name}:</b> ${m.text}</div>`;
             });
-            document.getElementById("chatBox").innerHTML = html;
-            document.getElementById("chatBox").scrollTop = document.getElementById("chatBox").scrollHeight;
+            const cb = document.getElementById("chatBox");
+            cb.innerHTML = html;
+            cb.scrollTop = cb.scrollHeight;
         });
     }
+
+    window.newGame = function() {
+        hp = 10; enemyHp = 10; gunCooldown = 0; round = 1;
+        remove(ref(db, `rooms/${room}/actions`));
+        remove(ref(db, `rooms/${room}/chat`));
+        document.getElementById("history").innerHTML = "";
+        document.getElementById("log").innerText = "---";
+        document.getElementById("newGameBtn").style.display = "none";
+        updateUI();
+    };
+
+    function updateUI() {
+        document.getElementById("hpDisplay").innerText = "❤️".repeat(hp);
+        document.getElementById("enemyHpDisplay").innerText = "❤️".repeat(enemyHp);
+        document.getElementById("hpNum").innerText = hp;
+        document.getElementById("enemyHpNum").innerText = enemyHp;
+        document.getElementById("gunStatus").innerText = gunCooldown > 0 ? `Gun cooling down: ${gunCooldown} rounds` : "Gun is READY! 🔫";
+        
+        if (hp <= 0) {
+            document.getElementById("status").innerText = "💀 YOU LOST THE BATTLE";
+            document.getElementById("newGameBtn").style.display = "block";
+        } else if (enemyHp <= 0) {
+            document.getElementById("status").innerText = "🏆 VICTORY! YOU WON!";
+            document.getElementById("newGameBtn").style.display = "block";
+        }
+    }
 </script>
+
 </body>
 </html>
