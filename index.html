@@ -64,7 +64,7 @@
     canvas.width = 900; canvas.height = 500;
 
     let room = "", playerName = "", playerId = Math.random().toString(36).substring(7);
-    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false };
+    let players = {}, ball = { x: 450, y: 50, vx: 0, vy: 0, holder: null, scored: false, ignoreRim: 0 };
     let myPos = { x: 150, y: 405, vy: 0, score: 0, energy: 3, isDunking: false, facingRight: true };
     
     // Controls & UI State
@@ -140,7 +140,7 @@
         Object.keys(players).forEach(id => {
             if(id !== playerId && ball.holder === id && !players[id].isDunking) {
                 let dist = Math.hypot(myPos.x - players[id].x, myPos.y - players[id].y);
-                if(dist < 60) { // Steal the visible ball
+                if(dist < 60) { // Steal
                     ball.holder = playerId;
                     ball.scored = false;
                     myPos.energy--;
@@ -163,19 +163,23 @@
             myPos.isDunking = true;
             ball.holder = null;
             
-            // Jump to rim
+            // Jump to rim and smash
             myPos.vy = -12; 
-            myPos.x = myPos.x < 450 ? 20 : 845; // Teleport to rim
+            const isLeftHoop = myPos.x < 450;
+            myPos.x = isLeftHoop ? 20 : 845; // Teleport character to rim
             
-            // Smash ball down
-            ball.x = myPos.x + 15; ball.y = 220;
-            ball.vx = 0; ball.vy = 20; 
+            ball.x = isLeftHoop ? 20 : 880; 
+            ball.y = 220;
+            ball.vx = isLeftHoop ? 4 : -4; // Bounce OUTWARDS after hitting floor
+            ball.vy = 20; 
+            ball.ignoreRim = Date.now() + 500; // FIX: Ignore rim for 0.5s so it doesn't get stuck
             
             showToast("WHAT A DUNK!!", "#e74c3c");
             update(ref(db, `rooms/${room}/ball`), ball);
             
             setTimeout(() => { myPos.isDunking = false; }, 600); // End invincibility
         } else {
+            // Start Charge
             isCharging = true;
             chargeStartTime = now;
         }
@@ -183,10 +187,11 @@
     });
 
     window.addEventListener("mouseup", e => {
+        // FIX: Shoot no matter what! Any power, any direction.
         if(e.button === 0 && isCharging && ball.holder === playerId) {
             isCharging = false;
-            let chargeTime = Math.min((Date.now() - chargeStartTime) / 1000, 1.2); // Max charge 1.2s
-            let powerMultiplier = 0.03 + (chargeTime * 0.08); // Convert hold time to force
+            let chargeTime = Math.min((Date.now() - chargeStartTime) / 1000, 1.2); 
+            let powerMultiplier = 0.05 + (chargeTime * 0.1); // Even a tiny tap has enough force to leave the hand
             
             ball.vx = (mouseX - myPos.x) * powerMultiplier;
             ball.vy = (mouseY - myPos.y) * powerMultiplier;
@@ -203,7 +208,7 @@
             if(keys['KeyA']) nextX -= 5; 
             if(keys['KeyD']) nextX += 5;
 
-            // Player Collision Prediction
+            // Player Collision 
             let collision = false;
             Object.keys(players).forEach(id => {
                 if(id !== playerId) {
@@ -232,15 +237,17 @@
             if(ball.x < 0) { ball.x = 0; ball.vx *= -0.5; } // Left Wall
             if(ball.x > 900) { ball.x = 900; ball.vx *= -0.5; } // Right Wall
 
-            // Rim Collisions (Front edge of hoops)
-            if(Math.hypot(ball.x - 40, ball.y - 230) < 15 || Math.hypot(ball.x - 860, ball.y - 230) < 15) {
-                ball.vx *= -0.7; ball.vy *= -0.7; ball.y -= 5;
+            // Rim Collisions (Only if not dunking right now)
+            if(Date.now() > ball.ignoreRim) {
+                if(Math.hypot(ball.x - 40, ball.y - 230) < 15 || Math.hypot(ball.x - 860, ball.y - 230) < 15) {
+                    ball.vx *= -0.7; ball.vy *= -0.7; ball.y -= 5;
+                }
             }
 
-            // Scoring Logic (Ball falls through hoop area)
+            // Scoring Logic
             if(ball.y > 220 && ball.y < 240 && ball.vy > 0 && !ball.scored) {
                 if((ball.x < 35 && ball.x > 5) || (ball.x > 865 && ball.x < 895)) {
-                    ball.scored = true; // Prevent double counting
+                    ball.scored = true; 
                     ball.vx *= 0.2; ball.vy *= 0.5; // Slow down through net
                     
                     const isThree = (myPos.x > 300 && myPos.x < 600); // Yellow zone
@@ -254,12 +261,12 @@
             // Pickup Loose Ball
             if(Math.hypot(myPos.x + 17 - ball.x, myPos.y + 30 - ball.y) < 40 && ball.y > 250) {
                 ball.holder = playerId;
-                ball.scored = false; // Reset flag
+                ball.scored = false; 
             }
 
         } else if(ball.holder === playerId) { 
-            // Visible Dribble (Side of player + bounce)
-            let bounceOffset = Math.sin(Date.now() / 120) * 12; // Dribble math
+            // Visible Dribble
+            let bounceOffset = Math.sin(Date.now() / 120) * 12; 
             ball.x = myPos.x + (myPos.facingRight ? 35 : -10); 
             ball.y = myPos.y + 30 + bounceOffset; 
             ball.vx = 0; ball.vy = 0;
@@ -295,10 +302,10 @@
         // Draw Ball
         ctx.fillStyle = "#e67e22"; ctx.beginPath(); ctx.arc(ball.x, ball.y, 12, 0, Math.PI*2); ctx.fill(); 
 
-        // Draw Charge Bar (Bright Rainbow Color)
+        // Draw Charge Bar
         if(isCharging && ball.holder === playerId) {
             let chargeAmount = Math.min((Date.now() - chargeStartTime) / 1000, 1.2) / 1.2;
-            ctx.fillStyle = `hsl(${120 - chargeAmount * 120}, 100%, 50%)`; // Green to Red
+            ctx.fillStyle = `hsl(${120 - chargeAmount * 120}, 100%, 50%)`; 
             ctx.fillRect(myPos.x - 5, myPos.y - 25, 45 * chargeAmount, 8);
             ctx.strokeStyle = "#fff"; ctx.strokeRect(myPos.x - 5, myPos.y - 25, 45, 8);
         }
