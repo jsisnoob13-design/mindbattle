@@ -19,52 +19,20 @@
             border: 2px solid #444;
         }
         button {
-            padding: 10px 15px;
-            margin: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            background: #444;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            transition: 0.2s;
+            padding: 10px 15px; margin: 5px; font-size: 16px; cursor: pointer;
+            background: #444; color: white; border: none; border-radius: 5px;
         }
         button:hover { background: #666; }
         .btn-gun { background: #d63031; }
-        .btn-gun:hover { background: #ff7675; }
         
         #chatBox {
-            height: 150px;
-            overflow-y: auto;
-            border: 1px solid #444;
-            background: #000;
-            margin: 15px 0;
-            padding: 10px;
-            text-align: left;
-            font-size: 14px;
-            border-radius: 5px;
+            height: 150px; overflow-y: auto; border: 1px solid #444;
+            background: #000; margin: 15px 0; padding: 10px; text-align: left;
         }
-        #history {
-            height: 100px;
-            overflow-y: auto;
-            border: 1px solid #333;
-            font-size: 12px;
-            color: #aaa;
-            margin-bottom: 10px;
-            background: #1a1a1a;
-            padding: 5px;
-        }
+        .chat-msg { margin-bottom: 5px; font-size: 14px; border-bottom: 1px solid #1a1a1a; padding-bottom: 2px; }
         .hp-display { font-size: 20px; margin: 10px 0; letter-spacing: 2px; }
-        input {
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid #444;
-            background: #333;
-            color: white;
-            margin: 5px;
-        }
+        input { padding: 8px; border-radius: 4px; border: 1px solid #444; background: #333; color: white; }
         #status { color: #fdcb6e; font-weight: bold; }
-        .chat-msg { margin-bottom: 4px; border-bottom: 1px solid #222; padding-bottom: 2px; }
     </style>
 </head>
 <body>
@@ -75,7 +43,6 @@
     <div id="setup">
         <input id="name" placeholder="Your Name">
         <input id="room" placeholder="Room Code">
-        <br>
         <button onclick="joinRoom()" style="background: #00b894;">Join Game</button>
     </div>
 
@@ -97,19 +64,14 @@
             <button onclick="sendAction('scissors')">✂️ Scissors</button>
             <button class="btn-gun" onclick="sendAction('gun')">🔫 Gun</button>
         </div>
-        <p id="gunStatus" style="font-size: 12px; color: #fab1a0;"></p>
-
+        <p id="gunStatus" style="font-size: 12px; color: #ff7675;"></p>
         <h4 id="log">---</h4>
         
-        <div id="history"></div>
-
-        <button id="newGameBtn" onclick="newGame()" style="display:none; background: #0984e3; width: 100%; font-weight: bold;">PLAY AGAIN / RESET</button>
-
-        <hr>
-        <h4>Chat</h4>
         <div id="chatBox"></div>
-        <input id="chatInput" placeholder="Press Enter to send..." style="width: 65%;">
+        <input id="chatInput" placeholder="Message..." style="width: 60%;">
         <button onclick="sendChat()" style="background: #6c5ce7;">Send</button>
+
+        <button id="newGameBtn" onclick="newGame()" style="display:none; background: #0984e3; width: 100%; margin-top:10px;">RESET GAME</button>
     </div>
 </div>
 
@@ -133,25 +95,25 @@
     let room = "";
     let playerName = "";
     let playerId = Math.random().toString(36).substring(2);
-    let hp = 10, enemyHp = 10, gunCooldown = 0, round = 1;
+    let hp = 10, enemyHp = 10, gunCooldown = 0;
 
-    // Helper: Turns a name into a unique bright color
-    function stringToColor(str) {
+    // Fixed Color Function: Generates a bright color for dark background
+    function getNameColor(name) {
         let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        for (let i = 0; i < name.length; i++) {
+            hash = name.charCodeAt(i) + ((hash << 5) - hash);
         }
-        return `hsl(${Math.abs(hash % 360)}, 70%, 70%)`;
+        // HSL: Brightness set to 75% for dark mode visibility
+        return `hsl(${Math.abs(hash % 360)}, 85%, 75%)`;
     }
 
     window.joinRoom = function() {
-        playerName = document.getElementById("name").value.trim() || "Player_" + playerId.substring(0,3);
+        playerName = document.getElementById("name").value.trim() || "Player";
         room = document.getElementById("room").value.trim();
         if (!room) return alert("Enter a room code!");
 
         document.getElementById("setup").style.display = "none";
         document.getElementById("gameArea").style.display = "block";
-        document.getElementById("status").innerText = "Room: " + room;
 
         document.getElementById("chatInput").addEventListener("keypress", (e) => {
             if (e.key === "Enter") sendChat();
@@ -165,86 +127,62 @@
     window.sendAction = function(action) {
         if (hp <= 0 || enemyHp <= 0) return;
         if (action === "gun" && gunCooldown > 0) return alert("Gun on cooldown!");
-
-        set(ref(db, `rooms/${room}/actions/${playerId}`), {
-            name: playerName,
-            player: playerId,
-            action: action
-        });
-        document.getElementById("enemyStatus").innerText = "Action Locked! Waiting...";
+        set(ref(db, `rooms/${room}/actions/${playerId}`), { name: playerName, player: playerId, action: action });
+        document.getElementById("enemyStatus").innerText = "Locked in!";
     };
 
     function listenActions() {
         onValue(ref(db, `rooms/${room}/actions`), (snapshot) => {
             const data = snapshot.val();
             if (!data) return;
-            const players = Object.keys(data);
-            if (players.length < 2) return;
-
-            const p1 = data[players[0]];
-            const p2 = data[players[1]];
-            
-            resolveBattle(p1, p2);
-            
-            setTimeout(() => {
-                remove(ref(db, `rooms/${room}/actions`));
-                if (hp > 0 && enemyHp > 0) document.getElementById("enemyStatus").innerText = "Choose your next move!";
-            }, 1500);
+            const keys = Object.keys(data);
+            if (keys.length === 2) {
+                const p1 = data[keys[0]];
+                const p2 = data[keys[1]];
+                resolveBattle(p1, p2);
+                setTimeout(() => {
+                    remove(ref(db, `rooms/${room}/actions`));
+                    if (hp > 0 && enemyHp > 0) document.getElementById("enemyStatus").innerText = "Choose next move!";
+                }, 1500);
+            }
         });
     }
 
     function resolveBattle(p1, p2) {
         let myMove = p1.player === playerId ? p1.action : p2.action;
         let enemyMove = p1.player === playerId ? p2.action : p1.action;
-        let enemyName = p1.player === playerId ? p2.name : p1.name;
-        let resultMsg = "";
+        let res = "Draw";
 
-        if (myMove === "gun" && enemyMove !== "gun") {
-            enemyHp--; resultMsg = "GUN beats everything! 💥";
-        } else if (enemyMove === "gun" && myMove !== "gun") {
-            hp--; resultMsg = enemyName + " used GUN! 💀";
-        } else if (myMove === enemyMove) {
-            resultMsg = "Draw! Both chose " + myMove;
-        } else if (
-            (myMove === "rock" && enemyMove === "scissors") ||
-            (myMove === "paper" && enemyMove === "rock") ||
-            (myMove === "scissors" && enemyMove === "paper")
-        ) {
-            enemyHp--; resultMsg = "You won this round! 🎉";
-        } else {
-            hp--; resultMsg = enemyName + " won this round.";
-        }
+        if (myMove === "gun" && enemyMove !== "gun") { enemyHp--; res = "You WIN! 🔫"; }
+        else if (enemyMove === "gun" && myMove !== "gun") { hp--; res = "Lose (GUN) 💀"; }
+        else if (myMove === enemyMove) res = "Draw!";
+        else if ((myMove === "rock" && enemyMove === "scissors") || (myMove === "paper" && enemyMove === "rock") || (myMove === "scissors" && enemyMove === "paper")) { enemyHp--; res = "You Win! 🎉"; }
+        else { hp--; res = "You Lose! 😢"; }
 
         if (myMove === "gun") gunCooldown = 4;
         if (gunCooldown > 0) gunCooldown--;
-
-        document.getElementById("log").innerText = myMove.toUpperCase() + " vs " + enemyMove.toUpperCase();
-        const hist = document.getElementById("history");
-        hist.innerHTML = `<div>R${round}: ${resultMsg}</div>` + hist.innerHTML;
-        round++;
+        document.getElementById("log").innerText = `${myMove.toUpperCase()} vs ${enemyMove.toUpperCase()}: ${res}`;
         updateUI();
     }
 
     window.sendChat = function() {
         const input = document.getElementById("chatInput");
         if (!input.value.trim()) return;
-        push(ref(db, `rooms/${room}/chat`), { 
-            name: playerName, 
-            text: input.value,
-            color: stringToColor(playerName) // Save the user's color
-        });
+        push(ref(db, `rooms/${room}/chat`), { name: playerName, text: input.value });
         input.value = "";
     };
 
     function listenChat() {
         onValue(ref(db, `rooms/${room}/chat`), (snapshot) => {
             const data = snapshot.val();
-            if (!data) { document.getElementById("chatBox").innerHTML = ""; return; }
             let html = "";
-            Object.values(data).slice(-20).forEach(m => {
-                const userColor = m.color || "#ffffff";
-                html += `<div class="chat-msg"><b style="color: ${userColor}">${m.name}:</b> ${m.text}</div>`;
-            });
+            if (data) {
+                Object.values(data).slice(-15).forEach(m => {
+                    // APPLY COLOR HERE
+                    const col = getNameColor(m.name);
+                    html += `<div class="chat-msg"><b style="color: ${col}">${m.name}:</b> ${m.text}</div>`;
+                });
+            }
             const cb = document.getElementById("chatBox");
             cb.innerHTML = html;
             cb.scrollTop = cb.scrollHeight;
@@ -252,13 +190,11 @@
     }
 
     window.newGame = function() {
-        hp = 10; enemyHp = 10; gunCooldown = 0; round = 1;
+        hp = 10; enemyHp = 10; gunCooldown = 0;
         remove(ref(db, `rooms/${room}/actions`));
         remove(ref(db, `rooms/${room}/chat`));
-        document.getElementById("history").innerHTML = "";
-        document.getElementById("log").innerText = "---";
         document.getElementById("newGameBtn").style.display = "none";
-        document.getElementById("status").innerText = "Room: " + room;
+        document.getElementById("log").innerText = "Game Reset!";
         updateUI();
     };
 
@@ -267,17 +203,12 @@
         document.getElementById("enemyHpDisplay").innerText = "❤️".repeat(enemyHp);
         document.getElementById("hpNum").innerText = hp;
         document.getElementById("enemyHpNum").innerText = enemyHp;
-        document.getElementById("gunStatus").innerText = gunCooldown > 0 ? `Gun cooldown: ${gunCooldown} rounds` : "Gun is READY! 🔫";
-        
-        if (hp <= 0) {
-            document.getElementById("status").innerText = "💀 GAME OVER - YOU LOST";
-            document.getElementById("newGameBtn").style.display = "block";
-        } else if (enemyHp <= 0) {
-            document.getElementById("status").innerText = "🏆 VICTORY - YOU WON!";
+        document.getElementById("gunStatus").innerText = gunCooldown > 0 ? `Gun: ${gunCooldown}s` : "Gun READY";
+        if (hp <= 0 || enemyHp <= 0) {
+            document.getElementById("status").innerText = hp <= 0 ? "GAME OVER" : "VICTORY!";
             document.getElementById("newGameBtn").style.display = "block";
         }
     }
 </script>
-
 </body>
 </html>
