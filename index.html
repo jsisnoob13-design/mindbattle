@@ -699,6 +699,7 @@ function loop(){
   const dt = (t - lastSim) / 16.666; // frames relative
   lastSim = t;
   stepLocal(dt, t);
+  applyAdditiveFixes(dt, t);
   renderAll(t);
   raf = requestAnimationFrame(loop);
 }
