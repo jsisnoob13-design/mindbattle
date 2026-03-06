@@ -1,377 +1,274 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
     <title>Internal Data Monitor</title>
     <style>
-        body { font-family: 'Courier New', Courier, monospace; background: #e9ecef; margin: 0; overflow: hidden; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        #app-container { display: flex; gap: 15px; display: none; }
-        canvas { background: #fff; border: 1px solid #ced4da; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        
-        .panel { width: 240px; display: flex; flex-direction: column; gap: 10px; }
-        .box { background: white; border: 1px solid #ced4da; padding: 12px; font-size: 12px; }
-        .box-header { font-weight: bold; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; margin-bottom: 8px; color: #495057; }
-        
-        #chatBox { height: 140px; overflow-y: auto; margin-bottom: 8px; color: #495057; }
-        #chatInput { width: 100%; border: 1px solid #ced4da; padding: 6px; box-sizing: border-box; font-family: inherit; }
-        #historyLog, #leaderboard { height: 130px; overflow-y: auto; color: #6c757d; font-size: 11px; }
-
-        #setup-screen { background: white; padding: 40px; border: 1px solid #ced4da; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: left; width: 300px; }
-        .input-group { margin-bottom: 15px; }
-        .input-group label { display: block; font-size: 12px; font-weight: bold; color: #6c757d; margin-bottom: 4px; }
-        .input-group input { width: 100%; padding: 8px; border: 1px solid #ced4da; box-sizing: border-box; font-family: inherit; }
-        button { width: 100%; padding: 10px; background: #f8f9fa; border: 1px solid #ced4da; cursor: pointer; font-family: inherit; font-weight: bold; color: #495057; transition: background 0.2s; }
-        button:hover { background: #e2e6ea; }
-        
-        #status-msg { margin-top: 10px; font-size: 11px; color: #dc3545; text-align: center; height: 15px; }
-
-        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; display: none; flex-direction: column; }
-        .overlay-card { background: white; padding: 30px; border: 2px solid #343a40; text-align: center; }
+        body { font-family: monospace; background: #e0e0e0; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; color: #333; }
+        #wrap { display: none; gap: 15px; }
+        canvas { background: #fff; border: 1px solid #aaa; box-shadow: 2px 2px 10px rgba(0,0,0,0.1); }
+        .side { width: 200px; display: flex; flex-direction: column; gap: 10px; }
+        .box { background: #fff; border: 1px solid #aaa; padding: 10px; font-size: 11px; }
+        .box-title { font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 6px; }
+        #chat { height: 120px; overflow-y: auto; border-bottom: 1px solid #eee; margin-bottom: 5px; }
+        input { width: 100%; border: 1px solid #ccc; font-family: monospace; font-size: 11px; padding: 5px; box-sizing: border-box; }
+        #setup { background: white; padding: 30px; border: 1px solid #666; text-align: left; width: 220px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .win { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: white; border: 2px solid #333; padding: 30px; display: none; text-align: center; z-index: 100; }
+        button { background: #f0f0f0; border: 1px solid #aaa; padding: 8px; cursor: pointer; width: 100%; font-family: monospace; font-weight: bold; }
+        button:hover { background: #e0e0e0; }
     </style>
 </head>
 <body>
 
-<div id="setup-screen">
-    <div style="font-weight: bold; font-size: 16px; margin-bottom: 20px; text-align: center;">[SECURE_NODE_LOGIN]</div>
-    <div class="input-group">
-        <label>OPERATOR_ID (Max 4 chars)</label>
-        <input id="inp-name" type="text" maxlength="4" placeholder="e.g. ALX">
-    </div>
-    <div class="input-group">
-        <label>TARGET_NODE (Room Code)</label>
-        <input id="inp-room" type="text" placeholder="e.g. 777">
-    </div>
-    <button id="btn-connect">ESTABLISH_CONNECTION</button>
-    <div id="status-msg"></div>
+<div id="setup">
+    <div style="font-weight: bold; margin-bottom: 15px; text-align: center;">[NODE_ACCESS_V4]</div>
+    OP_ID: <input id="n" placeholder="Initials (e.g. ALX)" maxlength="4" style="margin-bottom: 10px;">
+    ROOM: <input id="r" placeholder="000" style="margin-bottom: 15px;">
+    <button onclick="start()">CONNECT</button>
 </div>
 
-<div id="app-container">
-    <canvas id="gameCanvas" width="500" height="750"></canvas>
-    
-    <div class="panel">
+<div id="wrap">
+    <canvas id="c"></canvas>
+    <div class="side">
         <div class="box">
-            <div class="box-header">🏆 METRICS_LEADERBOARD</div>
-            <div id="leaderboard">Awaiting data...</div>
+            <div class="box-title">🏆 LEADERBOARD</div>
+            <div id="lead">Awaiting...</div>
         </div>
         <div class="box">
-            <div class="box-header">📜 SESSION_LOGS</div>
-            <div id="historyLog">No recorded ascensions.</div>
-        </div>
-        <div class="box">
-            <div class="box-header">💬 INTERNAL_COMMS</div>
-            <div id="chatBox"></div>
-            <input id="chatInput" type="text" placeholder="Transmit message... (Press Enter)">
+            <div class="box-title">💬 COMMS</div>
+            <div id="chat"></div>
+            <input id="ci" placeholder="Press Enter to send...">
         </div>
     </div>
 </div>
 
-<div id="win-screen" class="overlay">
-    <div class="overlay-card">
-        <h2 id="win-text" style="margin-top:0;">OPERATOR ASCENDED</h2>
-        <p>Simulation suspended. Awaiting reset.</p>
-        <button id="btn-restart" style="margin-top: 15px;">REINITIALIZE_NODE</button>
-    </div>
+<div id="win" class="win">
+    <h2 id="wt" style="margin-top:0;"></h2>
+    <p>Session Concluded.</p>
+    <button onclick="location.reload()">RESTART SEQUENCE</button>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue, update, push, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getDatabase, ref, set, onValue, update, push, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-    // Firebase Configuration
-    const firebaseConfig = {
+    const fb = initializeApp({
         apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
         authDomain: "mindbattle-f00a3.firebaseapp.com",
         databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
         projectId: "mindbattle-f00a3"
-    };
-
-    let db;
-    try {
-        const app = initializeApp(firebaseConfig);
-        db = getDatabase(app);
-    } catch (e) {
-        document.getElementById("status-msg").innerText = "DB_INIT_ERROR: Check console.";
-        console.error("Firebase Init Failed:", e);
-    }
-
-    // Core Game Variables
-    const canvas = document.getElementById("gameCanvas");
+    });
+    const db = getDatabase(fb);
+    const canvas = document.getElementById("c");
     const ctx = canvas.getContext("2d");
     
-    let room = "", pName = "", pId = "USR_" + Math.floor(Math.random() * 9999);
-    let myColor = `hsl(${Math.floor(Math.random() * 360)}, 60%, 45%)`;
-    
-    let players = {}, barrels = [], fires = [];
-    let state = { active: true, winner: null };
-    
-    // Player Physics State
-    let me = { x: 20, y: 710, vx: 0, vy: 0, climbing: false };
-    let keys = { a: false, d: false, w: false, s: false };
+    // Hardcore Micro-Map Size
+    canvas.width = 400; canvas.height = 600;
 
-    // Level Design: 10 Floors
-    const platforms = [];
-    for(let i=0; i<10; i++) {
-        let y = 730 - (i * 70);
-        if(i === 3 || i === 7) { 
-            // Broken floors (Gaps)
-            platforms.push({ x: 0, y: y, w: 160 }, { x: 340, y: y, w: 160 });
-        } else {
-            platforms.push({ x: i % 2 === 0 ? 0 : 60, y: y, w: 440 });
+    let room, pName, pId = "P" + Math.random().toString(36).substr(2,6);
+    let players = {}, barrels = [], fires = [], state = {active:true};
+    let me = { x: 20, y: 560, vx: 0, vy: 0, color: `hsl(${Math.random()*360}, 65%, 45%)` };
+    let keys = {}, lastSync = 0, lastTrigger = 0;
+
+    // Level Generation (10 Floors, 55px gap)
+    const plats = [];
+    for(let i=0; i<10; i++){
+        let y = 580 - (i*55);
+        if(i===4 || i===7) { 
+            plats.push({x:0, y:y, w:120}, {x:280, y:y, w:120}); // Broken Gaps
+        } else { 
+            plats.push({x: i%2===0 ? 0 : 40, y:y, w:360}); 
+        }
+    }
+    const lads = [];
+    for(let i=0; i<9; i++) lads.push({x: i%2===0 ? 360 : 20, y:580-((i+1)*55), w:20, h:55});
+
+    window.start = () => {
+        pName = document.getElementById("n").value.toUpperCase() || "OPR";
+        room = document.getElementById("r").value || "999";
+        document.getElementById("setup").style.display = "none";
+        document.getElementById("wrap").style.display = "flex";
+
+        // Cleanup on close
+        onDisconnect(ref(db, `v4/${room}/p/${pId}`)).remove();
+
+        // Listeners
+        onValue(ref(db, `v4/${room}/p`), s => players = s.val() || {});
+        onValue(ref(db, `v4/${room}/s`), s => {
+            state = s.val() || {active:true};
+            document.getElementById("win").style.display = state.active ? "none" : "block";
+            if(state.win) document.getElementById("wt").innerText = state.win + " ASCENDED";
+        });
+        
+        // Hazard Spawn Listener (Event-based syncing)
+        onValue(ref(db, `v4/${room}/trigger`), s => {
+            let t = s.val();
+            if(!t || t.id === lastTrigger || !state.active) return;
+            lastTrigger = t.id;
+            
+            if(t.type === 'B') barrels.push({x: t.x, y: t.y, vx: t.vx, kickTime: Date.now() + (Math.random()*1500 + 500)});
+            if(t.type === 'F') fires.push({x: t.x, y: t.y, exp: Date.now() + 2000});
+        });
+
+        // Chat & Leaderboard
+        onValue(ref(db, `v4/${room}/chat`), s => {
+            const cb = document.getElementById("chat");
+            cb.innerHTML = Object.values(s.val()||{}).map(m=>`<div><b>${m.n}:</b> ${m.m}</div>`).join("");
+            cb.scrollTop = cb.scrollHeight;
+        });
+        onValue(ref(db, `v4/${room}/hist`), s => {
+            const h = Object.values(s.val()||{});
+            const wins = {}; h.forEach(x => wins[x.win] = (wins[x.win]||0)+1);
+            document.getElementById("lead").innerHTML = Object.entries(wins).sort((a,b)=>b[1]-a[1]).map(e=>`[${e[1]}] ${e[0]}`).join("<br>") || "No data.";
+        });
+
+        setInterval(hostLoop, 1000);
+        requestAnimationFrame(gameLoop);
+    };
+
+    // Chat Input
+    document.getElementById("ci").onkeydown = e => {
+        if(e.key==="Enter" && e.target.value.trim()){ 
+            push(ref(db, `v4/${room}/chat`), {n:pName, m:e.target.value.trim()}); 
+            e.target.value=""; 
+        }
+    };
+
+    // Controls
+    window.onkeydown = e => keys[e.code] = true;
+    window.onkeyup = e => keys[e.code] = false;
+
+    function resetPlayer(){ me.x=20; me.y=560; me.vy=0; }
+
+    function hostLoop(){
+        if(!state.active) return;
+        const ids = Object.keys(players).sort();
+        if(ids[0] === pId){ // If I am the Host
+            // Spawn Barrel
+            if(Math.random() > 0.4){
+                let f = [1,2,3,5,6,8][Math.floor(Math.random()*6)];
+                let isEven = f%2===0;
+                set(ref(db, `v4/${room}/trigger`), {
+                    id: Date.now(), type: 'B', 
+                    x: isEven ? 5 : 385, y: 580-(f*55)-12, vx: isEven ? 2.5 : -2.5
+                });
+            }
+            // Spawn Fire (Targets Leader)
+            else if(Math.random() > 0.7){
+                let tx = 200, ty = 600;
+                Object.values(players).forEach(p=>{ if(p.y < ty) { ty=p.y; tx=p.x; } });
+                set(ref(db, `v4/${room}/trigger`), { id: Date.now(), type: 'F', x: tx, y: ty });
+            }
         }
     }
 
-    // Ladders (Connecting the zig-zags)
-    const ladders = [];
-    for(let i=0; i<9; i++) {
-        ladders.push({ x: i % 2 === 0 ? 420 : 60, y: 730 - ((i+1) * 70), w: 24, h: 70 });
-    }
-
-    // Connect to Room Logic
-    document.getElementById("btn-connect").addEventListener("click", () => {
-        pName = document.getElementById("inp-name").value.trim().toUpperCase() || "OPR";
-        room = document.getElementById("inp-room").value.trim() || "DEFAULT";
+    function updatePhysics(){
+        if(!state.active) return;
         
-        document.getElementById("status-msg").style.color = "#28a745";
-        document.getElementById("status-msg").innerText = "Authenticating...";
+        // 1. Ladder Logic
+        let onL = false;
+        lads.forEach(l => { if(me.x+10 > l.x && me.x < l.x+l.w && me.y+12 > l.y && me.y < l.y+l.h) onL = true; });
 
-        try {
-            // Setup Disconnect Hook
-            const myRef = ref(db, `nodes/${room}/players/${pId}`);
-            onDisconnect(myRef).remove();
+        if(onL && keys['KeyS']){ 
+            me.y -= 2.5; me.vy = 0; 
+        } else {
+            // Movement
+            if(keys['KeyA']) me.x -= 2.5;
+            if(keys['KeyD']) me.x += 2.5;
 
-            // Listeners
-            onValue(ref(db, `nodes/${room}/players`), s => players = s.val() || {});
-            onValue(ref(db, `nodes/${room}/barrels`), s => barrels = s.val() || []);
-            onValue(ref(db, `nodes/${room}/fires`), s => fires = s.val() || []);
-            onValue(ref(db, `nodes/${room}/state`), s => {
-                state = s.val() || { active: true };
-                document.getElementById("win-screen").style.display = state.active ? "none" : "flex";
-                if (!state.active && state.winner) {
-                    document.getElementById("win-text").innerText = `[${state.winner}] ASCENDED`;
+            // Soft Player Collision (Body Blocking)
+            Object.keys(players).forEach(id => {
+                if(id !== pId){
+                    let p = players[id];
+                    if(me.x < p.x+10 && me.x+10 > p.x && me.y < p.y+12 && me.y+12 > p.y){
+                        me.x += (me.x < p.x) ? -1.5 : 1.5; // Slide off them
+                    }
                 }
             });
 
-            // UI Listeners (Chat & History)
-            onValue(ref(db, `nodes/${room}/chat`), s => {
-                const box = document.getElementById("chatBox");
-                box.innerHTML = Object.values(s.val()||{}).map(m => `<div><b>${m.n}:</b> ${m.msg}</div>`).join("");
-                box.scrollTop = box.scrollHeight;
-            });
-
-            onValue(ref(db, `nodes/${room}/history`), s => {
-                const logs = Object.values(s.val()||{});
-                document.getElementById("historyLog").innerHTML = logs.reverse().map(l => `> Sequence_${l.id}: <b>${l.win}</b>`).join("<br>");
-                
-                // Calculate Leaderboard
-                const tally = {};
-                logs.forEach(l => tally[l.win] = (tally[l.win] || 0) + 1);
-                const sorted = Object.entries(tally).sort((a,b) => b[1] - a[1]);
-                document.getElementById("leaderboard").innerHTML = sorted.map(e => `[${e[1]} Wins] - <b>${e[0]}</b>`).join("<br>") || "No data.";
-            });
-
-            // Start Host Loop (Hazards)
-            setInterval(hostHazardLoop, 1000);
-
-            // Transition UI
-            document.getElementById("setup-screen").style.display = "none";
-            document.getElementById("app-container").style.display = "flex";
-            
-            // Start Game Loop
-            requestAnimationFrame(gameLoop);
-
-        } catch (err) {
-            document.getElementById("status-msg").style.color = "#dc3545";
-            document.getElementById("status-msg").innerText = "NETWORK_ERR: Connection blocked.";
-        }
-    });
-
-    // Chat Input
-    document.getElementById("chatInput").addEventListener("keypress", (e) => {
-        if (e.key === "Enter" && e.target.value.trim() !== "") {
-            push(ref(db, `nodes/${room}/chat`), { n: pName, msg: e.target.value.trim() });
-            e.target.value = "";
-        }
-    });
-
-    // Restart sequence
-    document.getElementById("btn-restart").addEventListener("click", () => {
-        set(ref(db, `nodes/${room}/state`), { active: true, winner: null });
-        set(ref(db, `nodes/${room}/barrels`), []);
-        set(ref(db, `nodes/${room}/fires`), []);
-        resetPlayer();
-    });
-
-    // Input Handling
-    window.addEventListener("keydown", e => {
-        if(e.code === 'KeyA') keys.a = true;
-        if(e.code === 'KeyD') keys.d = true;
-        if(e.code === 'KeyW') keys.w = true;
-        if(e.code === 'KeyS') keys.s = true;
-    });
-    window.addEventListener("keyup", e => {
-        if(e.code === 'KeyA') keys.a = false;
-        if(e.code === 'KeyD') keys.d = false;
-        if(e.code === 'KeyW') keys.w = false;
-        if(e.code === 'KeyS') keys.s = false;
-    });
-
-    // Host Logic for Hazards
-    function hostHazardLoop() {
-        if (!state.active) return;
-        
-        // Am I the host? (First player in the object)
-        const playerIds = Object.keys(players).sort();
-        if (playerIds[0] === pId) {
-            
-            // Spawn Barrels (Orange)
-            if (Math.random() > 0.3) {
-                const spawnFloors = [1, 2, 4, 5, 6, 8];
-                let f = spawnFloors[Math.floor(Math.random() * spawnFloors.length)];
-                let yPos = 730 - (f * 70) - 14;
-                let isEven = f % 2 === 0;
-                
-                barrels.push({ x: isEven ? 10 : 476, y: yPos, vx: isEven ? 4 : -4 });
-                if(barrels.length > 15) barrels.shift(); // Max 15 barrels
-                set(ref(db, `nodes/${room}/barrels`), barrels);
-            }
-
-            // Spawn Fire (Red - Targets Leader)
-            if (Math.random() > 0.6) {
-                let targetX = 250, highestY = 800;
-                Object.values(players).forEach(p => { if (p.y < highestY) { highestY = p.y; targetX = p.x; } });
-                
-                fires.push({ x: targetX, y: highestY, expires: Date.now() + 2500 });
-                set(ref(db, `nodes/${room}/fires`), fires);
-            }
-            
-            // Cleanup expired fires
-            let activeFires = fires.filter(f => f.expires > Date.now());
-            if(activeFires.length !== fires.length) set(ref(db, `nodes/${room}/fires`), activeFires);
-        }
-    }
-
-    function resetPlayer() {
-        me.x = 20; me.y = 710; me.vy = 0;
-    }
-
-    function updatePhysics() {
-        if (!state.active) return;
-
-        // 1. Check Ladder Collision
-        me.climbing = false;
-        ladders.forEach(l => {
-            if (me.x + 16 > l.x && me.x < l.x + l.w && me.y + 20 > l.y && me.y < l.y + l.h) {
-                me.climbing = true;
-            }
-        });
-
-        // 2. Movement
-        if (me.climbing && keys.s) {
-            me.y -= 3.5; // Climb up
-            me.vy = 0;
-        } else {
-            if (keys.a) me.x -= 3.5;
-            if (keys.d) me.x += 3.5;
-            
-            // Jump
-            if (keys.w && me.vy === 0) me.vy = -9;
-            
-            // Gravity
-            me.vy += 0.5;
+            // Jump & Gravity (Mathematically prevents skipping floors)
+            if(keys['KeyW'] && me.vy === 0) me.vy = -6.5; 
+            me.vy += 0.4; 
             me.y += me.vy;
         }
 
-        // Screen Bounds
-        if (me.x < 0) me.x = 0;
-        if (me.x > 484) me.x = 484;
-
-        // 3. Platform Collision
-        platforms.forEach(p => {
-            // Only collide if falling downwards
-            if (me.vy >= 0 && me.x + 16 > p.x && me.x < p.x + p.w && me.y + 20 > p.y && me.y + 20 < p.y + 10) {
-                me.y = p.y - 20;
-                me.vy = 0;
+        // 2. Platform Collision (One-way down)
+        plats.forEach(p => {
+            if(me.vy >= 0 && me.x+10 > p.x && me.x < p.x+p.w && me.y+12 > p.y && me.y+12 < p.y+8){
+                me.y = p.y-12; me.vy = 0;
             }
         });
 
-        // 4. Hazard Collision & Penalties
-        if (me.y > 780) resetPlayer(); // Fell off bottom
+        // Bounds
+        if(me.y > 600) resetPlayer(); // Fell in gap
+        if(me.x < 0) me.x = 0;
+        if(me.x > 390) me.x = 390;
 
-        barrels.forEach(b => {
-            if (Math.hypot((me.x+8) - (b.x+7), (me.y+10) - (b.y+7)) < 15) resetPlayer();
-        });
-
-        fires.forEach(f => {
-            if (Math.hypot((me.x+8) - f.x, (me.y+10) - f.y) < 22) resetPlayer();
-        });
-
-        // 5. Win Condition (Reached Top)
-        if (me.y < 40) {
-            let nextId = document.getElementById("historyLog").innerHTML.split("<br>").filter(x=>x).length + 1;
-            set(ref(db, `nodes/${room}/state`), { active: false, winner: pName });
-            push(ref(db, `nodes/${room}/history`), { id: nextId, win: pName });
+        // 3. Hazard Logic (Local update for smoothness)
+        for(let i = barrels.length-1; i>=0; i--){
+            let b = barrels[i];
+            // The "Kick" (Speeds up randomly)
+            let speed = (Date.now() > b.kickTime) ? b.vx * 1.8 : b.vx;
+            b.x += speed;
+            
+            // Collision
+            if(Math.hypot((me.x+5)-(b.x+5), (me.y+6)-(b.y+5)) < 11) resetPlayer();
+            
+            // Remove off-screen barrels
+            if(b.x > 450 || b.x < -50) barrels.splice(i, 1);
         }
 
-        // Sync to Firebase
-        update(ref(db, `nodes/${room}/players/${pId}`), { x: me.x, y: me.y, n: pName, c: myColor });
+        for(let i = fires.length-1; i>=0; i--){
+            let f = fires[i];
+            if(Date.now() > f.exp) { fires.splice(i, 1); continue; }
+            if(Math.hypot((me.x+5)-f.x, (me.y+6)-f.y) < 18) resetPlayer();
+        }
+
+        // 4. Win Condition
+        if(me.y < 40){
+            set(ref(db, `v4/${room}/s`), {active:false, win:pName});
+            push(ref(db, `v4/${room}/hist`), {win:pName});
+        }
+
+        // 5. Throttled Network Sync (Saves Firebase quota and stops lag)
+        if(Date.now() - lastSync > 40){
+            update(ref(db, `v4/${room}/p/${pId}`), {x:me.x, y:me.y, n:pName, c:me.color});
+            lastSync = Date.now();
+        }
     }
 
-    function drawGame() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Draw Platforms
-        ctx.fillStyle = "#adb5bd";
-        platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, 3));
-
-        // Draw Ladders
-        ctx.fillStyle = "#dee2e6";
-        ladders.forEach(l => {
-            ctx.fillRect(l.x, l.y, 4, l.h);
-            ctx.fillRect(l.x + l.w - 4, l.y, 4, l.h);
-            for(let i = 10; i < l.h; i += 15) ctx.fillRect(l.x, l.y + i, l.w, 3);
-        });
-
-        // Draw Bosses (Kongs)
-        ctx.fillStyle = "#f8d7da"; // Junior Kongs
-        [1, 2, 4, 5, 6, 8].forEach(f => {
-            let isEven = f % 2 === 0;
-            ctx.fillRect(isEven ? 5 : 475, 730 - (f * 70) - 20, 20, 20);
+    function drawGame(){
+        ctx.clearRect(0,0,400,600);
+        
+        // Platforms & Ladders
+        ctx.fillStyle = "#bbb"; plats.forEach(p => ctx.fillRect(p.x, p.y, p.w, 4));
+        ctx.fillStyle = "#ddd"; lads.forEach(l => {
+            ctx.fillRect(l.x, l.y, 3, l.h); ctx.fillRect(l.x+l.w-3, l.y, 3, l.h);
+            for(let i=10; i<l.h; i+=12) ctx.fillRect(l.x, l.y+i, l.w, 3);
         });
         
-        ctx.fillStyle = "#cce5ff"; // Big Boss (Top)
-        let bossX = 235 + Math.sin(Date.now() / 600) * 180;
-        ctx.fillRect(bossX, 10, 30, 30);
+        // Junior Kongs (Side Bosses)
+        ctx.fillStyle = "#fcc"; [1,2,3,5,6,8].forEach(f => ctx.fillRect(f%2===0 ? 2 : 380, 580-(f*55)-18, 18, 18));
+        
+        // Big Boss (Top)
+        ctx.fillStyle = "#d0c0ff"; ctx.fillRect(185 + Math.sin(Date.now()/500)*140, 5, 30, 30);
+        
+        // Hazards
+        ctx.fillStyle = "#ff8c00"; barrels.forEach(b => ctx.fillRect(b.x, b.y, 10, 10));
+        ctx.fillStyle = "#dc3545"; ctx.font="bold 16px monospace"; 
+        fires.forEach(f => ctx.fillText(". .. ...", f.x-20, f.y+10));
 
-        // Draw Hazards
-        ctx.fillStyle = "#fd7e14"; // Barrels
-        barrels.forEach(b => {
-            ctx.fillRect(b.x, b.y, 14, 14);
-            if (state.active) b.x += b.vx; 
-        });
-
-        ctx.fillStyle = "#dc3545"; // Fire
-        ctx.font = "bold 16px Courier New";
-        fires.forEach(f => {
-            if (f.expires > Date.now()) ctx.fillText(". .. ...", f.x - 20, f.y + 10);
-        });
-
-        // Draw Players
+        // Players
         Object.keys(players).forEach(id => {
-            let p = players[id];
-            ctx.fillStyle = p.c;
-            ctx.fillRect(p.x, p.y, 16, 20);
-            
-            // Name Tag
-            ctx.fillStyle = "#495057";
-            ctx.font = "10px sans-serif";
-            ctx.fillText(p.n, p.x - 2, p.y - 4);
+            let p = players[id]; 
+            ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, 10, 12);
+            ctx.fillStyle = "#333"; ctx.font = "9px monospace"; ctx.fillText(p.n, p.x-4, p.y-4);
         });
     }
 
-    function gameLoop() {
-        updatePhysics();
-        drawGame();
-        requestAnimationFrame(gameLoop);
+    function gameLoop(){ 
+        updatePhysics(); 
+        drawGame(); 
+        requestAnimationFrame(gameLoop); 
     }
 </script>
 </body>
