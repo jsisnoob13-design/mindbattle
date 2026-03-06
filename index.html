@@ -266,7 +266,7 @@ function floorHasGap(f){
 }
 function floorGapRange(f){
   if(!floorHasGap(f)) return null;
-  const gapW = 120;
+  const gapW = 50;
   const cx = CANVAS_W / 2;
   return [cx - gapW/2, cx + gapW/2];
 }
