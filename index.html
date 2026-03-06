@@ -1,679 +1,218 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Simple Chinese Chess — PvP (4×8)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    :root{
-      --bg:#f5f7fa;
-      --panel:#fff;
-      --muted:#9aa6b2;
-      --accent-green:#2ecc71;
-      --red:#e74c3c;
-      --blackish:#2c3e50;
-      --tile-size:80px;
-      --tile-gap:8px;
-      --board-bg:#f3efe6;
-      --tile-bg:#fff;
-      --hidden-bg:#dfe3e8;
-      --shadow: 0 6px 18px rgba(10,10,20,.06);
-    }
-    *{box-sizing:border-box}
-    body{margin:0; font-family: Inter, system-ui, "Segoe UI", Roboto, "Noto Sans CJK SC", "Noto Sans", sans-serif; background:linear-gradient(180deg,#eef2f7 0%, #f9fbfd 100%); color:#1f2937; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;}
-    /* MAIN APP LAYOUT */
-    .app{
-      width:1400px;
-      max-width:100%;
-      background:var(--panel);
-      border-radius:12px;
-      box-shadow:var(--shadow);
-      overflow:visible;
-      display:grid;
-      grid-template-columns:360px 1fr;
-      gap:20px;
-      padding:20px;
-    }
-    .left{display:flex; flex-direction:column; gap:16px}
-    .logo{font-weight:700; font-size:18px; color:var(--blackish)}
-    .small{color:var(--muted); font-size:13px}
-    .card{background:linear-gradient(180deg,#ffffff, #fbfcfd); border-radius:10px; padding:14px; box-shadow: 0 2px 6px rgba(10,10,20,.03);}
-    .controls label{display:block; font-size:13px; margin-bottom:6px; color:var(--muted)}
-    .controls input{width:100%; padding:10px 12px; border-radius:8px; border:1px solid #e6e9ee; font-size:14px}
-    .controls button{width:100%; margin-top:10px; padding:10px; border-radius:8px; border:none; cursor:pointer; font-weight:700; background:#2978ff; color:white; font-size:14px}
-    .players-list{display:flex; gap:8px; flex-direction:column}
-    .player-row{display:flex; align-items:center; gap:10px}
-    .avatar{width:36px; height:36px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:700; color:white}
-    .name-col{font-weight:600}
-    .status{font-size:12px; color:var(--muted)}
+    <title>Internal Data Monitor</title>
+    <style>
+        body { font-family: monospace; background: #f0f0f0; margin: 0; overflow: hidden; color: #444; }
+        #main { display: flex; justify-content: center; padding: 20px; gap: 10px; }
+        canvas { background: #fff; border: 1px solid #ccc; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
+        
+        .side-panel { width: 220px; display: flex; flex-direction: column; gap: 10px; }
+        .box { background: white; border: 1px solid #ccc; padding: 10px; font-size: 11px; }
+        #chatBox { height: 120px; overflow-y: auto; border-bottom: 1px solid #eee; margin-bottom: 5px; }
+        #chatInput { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; font-family: monospace; }
+        #historyLog, #leaderboard { height: 120px; overflow-y: auto; color: #666; border-top: 1px solid #eee; padding-top: 5px; }
 
-    /* right: board + chat */
-    .right { display:flex; flex-direction:column; gap:12px; }
-    .topbar{display:flex; align-items:center; justify-content:space-between}
-    .title{font-size:20px; font-weight:700}
-    .roomlabel{font-size:13px; color:var(--muted)}
-    .gameheader{display:flex; gap:12px; align-items:center}
-    .turn-indicator{padding:8px 12px; border-radius:8px; background:#fff; border:1px solid #eef0f3; display:flex; gap:10px; align-items:center; min-width:220px}
-    .turn-dot{width:12px; height:12px; border-radius:50%}
-    .controls-row{display:flex; gap:8px; margin-left:auto}
-    .btn{padding:8px 12px; border-radius:8px; border:none; background:#f0f2f5; cursor:pointer; font-weight:700}
-    .btn.primary{background:#2b7cff; color:white}
-    .btn.warn{background:#e74c3c;color:white}
-
-    /* board area */
-    .board-wrap{
-      padding:20px;
-      background:var(--board-bg);
-      border-radius:10px;
-      display:flex;
-      gap:20px;
-      align-items:flex-start;
-      overflow:auto; /* allow scroll rather than collapse */
-    }
-
-    /* IMPORTANT: enforce 8 columns and prevent shrinking */
-    .board {
-      display: grid;
-      grid-template-columns: repeat(8, var(--tile-size));
-      grid-auto-rows: var(--tile-size);
-      gap: var(--tile-gap);
-
-      /* ensure the board keeps the full 8-column width and won't collapse */
-      min-width: calc(var(--tile-size) * 8 + var(--tile-gap) * 7);
-      width: min(100%, calc(var(--tile-size) * 8 + var(--tile-gap) * 7));
-      box-sizing: border-box;
-
-      /* make sure it won't force other panels to squish: allow scrolling */
-      overflow-x: auto;
-      overflow-y: visible;
-
-      /* prevent flexbox shrinking */
-      flex: 0 0 auto;
-    }
-
-    .tile{display:flex; align-items:center; justify-content:center; border-radius:8px; background:var(--tile-bg); box-shadow: 0 2px 6px rgba(0,0,0,.03); font-size:34px; cursor:pointer; user-select:none; position:relative; transition:all .12s ease}
-    .tile.hidden{background:var(--hidden-bg); font-size:32px; color:#556; font-weight:700}
-    .tile.empty{background:transparent; box-shadow:none; cursor:default}
-    .tile.green{outline:3px solid rgba(46,204,113,.18); box-shadow: 0 6px 18px rgba(46,204,113,.06) inset}
-    .tile.selected{box-shadow: 0 0 0 3px rgba(43,124,255,.12), 0 6px 20px rgba(10,10,20,.06)}
-    .tile.revealed .char{font-size:40px; font-weight:700}
-    .tile .sub{position:absolute; bottom:6px; right:6px; font-size:10px; color:var(--muted)}
-    .tile.empty:after{content:''; display:block; width:100%; height:100%; border:1px dashed rgba(0,0,0,.03); border-radius:8px}
-
-    /* right-side panel (chat + move log) — reserve space so it never collapses */
-    .rightpanel {
-      flex: 0 0 380px;
-      min-width: 360px;
-      box-sizing: border-box;
-      display:flex;
-      flex-direction:column;
-      gap:12px;
-    }
-
-    /* chat */
-    .chatbox{display:flex; flex-direction:column; gap:8px; height:320px}
-    .messages{flex:1; overflow:auto; background:#fff; padding:12px; border-radius:8px; border:1px solid #eef0f3}
-    .msg{margin-bottom:8px; display:block}
-    .msg .who{font-weight:700; margin-right:6px}
-    .inputrow{display:flex; gap:8px}
-    .chatinput{flex:1; padding:10px; border-radius:8px; border:1px solid #e6e9ee}
-    .small-muted{font-size:12px; color:var(--muted)}
-
-    /* bottom: winner modal */
-    .overlay{position:fixed; inset:0; background:rgba(3,6,12,.45); display:flex; align-items:center; justify-content:center}
-    .modal{background:white; padding:20px; border-radius:10px; width:360px; text-align:center}
-    .modal h2{margin:0 0 10px}
-    .modal p{color:#666; margin:8px 0 16px}
-    .modal .actions{display:flex; gap:8px; justify-content:center}
-    @media (max-width:980px){
-      .app{grid-template-columns:1fr; padding:12px;}
-      .left{order:2}
-      .right{order:1}
-      .board{justify-self:center; transform:scale(.9)}
-    }
-    .char{font-family: "Noto Serif SC", "PingFang SC", "Microsoft YaHei", serif}
-  </style>
+        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .win-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; padding: 30px; text-align: center; display: none; z-index: 500; }
+    </style>
 </head>
 <body>
-  <div class="app" id="app">
-    <div class="left">
-      <div class="logo">Simple Chinese Chess</div>
-      <div class="small">Simple PvP hidden-piece Xiangqi variant — 4×8 board</div>
 
-      <div class="card controls" id="joinCard">
-        <label>Name</label>
-        <input id="nameInput" placeholder="Your name (e.g., Jason)" maxlength="20">
-        <label style="margin-top:10px">Room Code</label>
-        <input id="roomInput" placeholder="Type room code (e.g., 111)" maxlength="8">
-        <button id="joinBtn">Join / Create Room</button>
-        <div class="small-muted" style="margin-top:8px">Type the same room code as your friend to join the same room.</div>
-      </div>
-
-      <div class="card" id="playersCard" style="display:none;">
-        <div style="font-weight:700; margin-bottom:8px">Players</div>
-        <div class="players-list" id="playersList"></div>
-        <div style="margin-top:10px; display:flex; gap:8px">
-          <button id="rematchBtn" class="btn primary" style="flex:1">Rematch</button>
-          <button id="leaveBtn" class="btn" style="flex:1">Leave</button>
-        </div>
-        <div style="margin-top:10px; font-size:12px; color:var(--muted)">
-          Rematch: press once — any player may request rematch.
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:auto">
-        <div style="font-weight:700">How to play</div>
-        <ul style="margin:8px 0 0 18px; color:var(--muted)">
-          <li>Click any hidden tile (■) to flip (flip = your turn).</li>
-          <li>Click your revealed piece → click highlighted tile to move (1 square orthogonal).</li>
-          <li>Hidden tiles block movement until flipped.</li>
-          <li>Capture allowed by rank (attacker wins ties). Soldier (兵) can capture General (将); General cannot capture Soldier.</li>
-          <li>First revealed piece sets your color.</li>
-        </ul>
-      </div>
+<div id="setup">
+    <div style="border: 1px solid #999; padding: 20px; background: #fff;">
+        <strong>[NODE_ACCESS_REQUIRED]</strong><br><br>
+        USR_ID: <input id="name" placeholder="Initials..." maxlength="5" style="width:80px;"><br><br>
+        ROOM: <input id="room" placeholder="000x00" style="width:80px;"><br><br>
+        <button onclick="joinRoom()">CONNECT</button>
     </div>
+</div>
 
-    <div class="right">
-      <div class="topbar">
-        <div>
-          <div class="title">Simple Chinese Chess</div>
-          <div class="roomlabel" id="roomLabel">Room: —</div>
+<div id="main">
+    <canvas id="g"></canvas>
+
+    <div class="side-panel">
+        <div class="box">
+            <strong>🏆 LEADERBOARD</strong>
+            <div id="leaderboard">Calculating...</div>
         </div>
-
-        <div class="gameheader" id="gameHeader" style="display:none">
-          <div class="turn-indicator" id="turnIndicator"><div class="turn-dot" id="turnDot"></div><div id="turnText">Waiting...</div></div>
-          <div class="controls-row">
-            <button class="btn" id="playersBtn">Players</button>
-            <button class="btn" id="copyCodeBtn">Copy Room Code</button>
-          </div>
+        <div class="box">
+            <strong>📜 ROUND_HISTORY</strong>
+            <div id="historyLog"></div>
         </div>
-      </div>
-
-      <div class="board-wrap card" id="boardWrap" style="display:none">
-        <div style="display:flex; gap:12px; align-items:start;">
-          <div>
-            <div style="font-weight:700; margin-bottom:6px">Board</div>
-            <div class="board" id="board"></div>
-          </div>
-
-          <!-- RIGHT PANEL: chat + move log; use .rightpanel so it won't collapse -->
-          <div class="rightpanel">
-            <div style="font-weight:700; margin-bottom:8px">Chat</div>
-            <div class="chatbox">
-              <div class="messages" id="messages"></div>
-              <div class="inputrow">
-                <input id="chatInput" class="chatinput" placeholder="Press Enter to send..." autocomplete="off">
-                <button id="sendBtn" class="btn">Send</button>
-              </div>
-            </div>
-
-            <div style="margin-top:12px">
-              <div style="font-weight:700">Move log</div>
-              <div id="moveLog" style="max-height:120px; overflow:auto; padding:8px; background:#fff; border-radius:8px; border:1px solid #eef0f3; font-size:13px"></div>
-            </div>
-          </div>
+        <div class="box">
+            <strong>💬 COMMS</strong>
+            <div id="chatBox"></div>
+            <input id="chatInput" placeholder="Enter message...">
         </div>
-      </div>
     </div>
-  </div>
+</div>
 
-  <!-- winner modal inserted dynamically -->
-  <div id="modalHost"></div>
+<div id="winOverlay" class="win-overlay">
+    <h2 id="winnerMsg">USER_01 WON</h2>
+    <p>Session concluded. Synchronizing records...</p>
+    <button onclick="restartGame()">RESTART_SEQUENCE</button>
+</div>
 
-  <!-- Firebase SDK modular imports -->
-  <script type="module">
+<script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, set, push, onValue, off, update, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-    // ---------- Firebase config (same as yours) ----------
-    const firebaseConfig = {
-      apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
-      authDomain: "mindbattle-f00a3.firebaseapp.com",
-      databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "mindbattle-f00a3"
-    };
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // ---------- Local state ----------
-    const state = {
-      room: null,
-      playerId: randomId(),
-      playerName: null,
-      playerColor: null,
-      joinedAt: null,
-      players: {},
-      board: null,
-      turnId: null,
-      creatorId: null,
-      winner: null,
-      selectedIndex: null,
-      moveLog: []
-    };
-
-    // piece counts
-    const PIECE_COUNTS = {
-      "将": 1,
-      "士": 2,
-      "象": 2,
-      "马": 2,
-      "车": 2,
-      "炮": 2,
-      "兵": 5
-    };
-    const RED_NAMES = {"兵":"兵","炮":"炮","车":"车","马":"马","象":"象","士":"士","将":"将"};
-    const BLACK_NAMES = {"兵":"卒","炮":"炮","车":"車","马":"馬","象":"相","士":"仕","将":"帥"};
-    const RANK = {"将":7,"士":6,"象":5,"马":4,"車":3,"车":3,"炮":2,"兵":1,"卒":1};
-
-    // DOM refs
-    const joinCard = document.getElementById('joinCard');
-    const playersCard = document.getElementById('playersCard');
-    const boardWrap = document.getElementById('boardWrap');
-    const boardEl = document.getElementById('board');
-    const joinBtn = document.getElementById('joinBtn');
-    const nameInput = document.getElementById('nameInput');
-    const roomInput = document.getElementById('roomInput');
-    const roomLabel = document.getElementById('roomLabel');
-    const playersList = document.getElementById('playersList');
-    const turnIndicator = document.getElementById('turnIndicator');
-    const turnDot = document.getElementById('turnDot');
-    const turnText = document.getElementById('turnText');
-    const messagesEl = document.getElementById('messages');
-    const chatInput = document.getElementById('chatInput');
-    const sendBtn = document.getElementById('sendBtn');
-    const rematchBtn = document.getElementById('rematchBtn');
-    const leaveBtn = document.getElementById('leaveBtn');
-    const moveLogEl = document.getElementById('moveLog');
-    const copyCodeBtn = document.getElementById('copyCodeBtn');
-
-    // wire events
-    joinBtn.onclick = joinRoom;
-    sendBtn.onclick = sendChat;
-    chatInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') sendChat(); });
-    copyCodeBtn && (copyCodeBtn.onclick = () => { if(state.room) navigator.clipboard?.writeText(state.room).then(()=>alert('Copied code')); });
-    rematchBtn.onclick = requestRematch;
-    leaveBtn.onclick = leaveRoom;
-
-    boardEl.addEventListener('click', (ev) => {
-      const t = ev.target.closest('.tile');
-      if(!t) return;
-      const idx = parseInt(t.dataset.index,10);
-      if(isNaN(idx)) return;
-      onTileClicked(idx);
+    const fb = initializeApp({
+        apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
+        authDomain: "mindbattle-f00a3.firebaseapp.com",
+        databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "mindbattle-f00a3"
     });
+    const db = getDatabase(fb);
+    const c = document.getElementById("g");
+    const ctx = c.getContext("2d");
+    c.width = 450; c.height = 750;
 
-    // helper
-    function randomId(){ return Math.random().toString(36).slice(2,10); }
-    function safeName(n){ return (n||'Player').substring(0,20).replace(/</g,'').replace(/>/g,''); }
-    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[ch])); }
-    function pushMoveLog(text){ state.moveLog.unshift({t: Date.now(), text}); renderMoveLog(); }
-    function renderMoveLog(){ moveLogEl.innerHTML = state.moveLog.slice(0,40).map(m=>`<div style="padding:4px 0;border-bottom:1px dashed #f2f4f6;font-size:13px">${escapeHtml(m.text)}</div>`).join(''); }
+    let room = "", pName = "", pId = Math.random().toString(36).substr(7);
+    let myCol = `hsl(${Math.random() * 360}, 50%, 45%)`;
+    let players = {}, barrels = [], fires = [], gameState = { active: true };
+    let me = { x: 50, y: 710, vx: 0, vy: 0, onL: false };
+    let keys = {};
 
-    // tile constructors
-    function hiddenTile(piece=null,color=null){ return { piece: piece, color: color, revealed:false }; }
-
-    // char display
-    function tileChar(tile){
-      if(!tile) return '';
-      if(tile.piece === null) return '';
-      const p = tile.piece;
-      const color = tile.color;
-      if(color === 'red') return RED_NAMES[p] || p;
-      if(color === 'black') return BLACK_NAMES[p] || p;
-      return p;
-    }
-
-    function rankOf(pieceName){ return RANK[pieceName] || 0; }
-    function canCapture(attackerPiece, defenderPiece){
-      if(!attackerPiece || !defenderPiece) return false;
-      if(attackerPiece === '兵' && defenderPiece === '将') return true;
-      if(attackerPiece === '将' && defenderPiece === '兵') return false;
-      const aRank = rankOf(attackerPiece);
-      const dRank = rankOf(defenderPiece);
-      return aRank >= dRank;
-    }
-    function neighbors(index){
-      const r = Math.floor(index / 8), c = index % 8;
-      const list=[];
-      if(r>0) list.push(index - 8);
-      if(r<3) list.push(index + 8);
-      if(c>0) list.push(index - 1);
-      if(c<7) list.push(index + 1);
-      return list;
-    }
-    function otherPlayerId(){ const keys = Object.keys(state.players||{}).filter(id=>id!==state.playerId); return keys.length? keys[0] : null; }
-
-    // board creation
-    function makePiecePool(){
-      const pool = [];
-      Object.keys(PIECE_COUNTS).forEach(p => { for(let i=0;i<PIECE_COUNTS[p];i++) pool.push({piece: p, color:'red'}); });
-      const poolBlack = [];
-      Object.keys(PIECE_COUNTS).forEach(p => { for(let i=0;i<PIECE_COUNTS[p];i++) poolBlack.push({piece: p, color:'black'}); });
-      const merged = pool.concat(poolBlack);
-      for(let i=merged.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [merged[i],merged[j]]=[merged[j],merged[i]]; }
-      return merged;
-    }
-
-    async function createAndWriteBoard(room){
-      const items = makePiecePool();
-      const board = [];
-      for(let i=0;i<32;i++){
-        const it = items[i];
-        board.push(hiddenTile(it.piece, it.color));
-      }
-      await set(ref(db, `rooms/${room}/board`), board);
-      await set(ref(db, `rooms/${room}/turn`), state.playerId);
-      await set(ref(db, `rooms/${room}/creator`), state.playerId);
-      await set(ref(db, `rooms/${room}/winner`), null);
-      await set(ref(db, `rooms/${room}/rematch`), null);
-      pushMoveLog('Board created and shuffled.');
-    }
-
-    // actions
-    async function onTileClicked(idx){
-      if(!state.board) return;
-      if(state.winner) return;
-      const tile = state.board[idx];
-      if(state.turnId !== state.playerId) return;
-      if(!tile.revealed){ await flipTile(idx); return; }
-      if(tile.piece === null){
-        if(state.selectedIndex !== null){ await attemptMove(state.selectedIndex, idx); }
-        return;
-      }
-      if(tile.color && tile.color === state.playerColor){
-        if(state.selectedIndex === idx){ state.selectedIndex = null; renderBoard(); return; }
-        state.selectedIndex = idx; renderBoard(); return;
-      } else {
-        if(state.selectedIndex !== null){ await attemptMove(state.selectedIndex, idx); return; }
-        return;
-      }
-    }
-
-    async function flipTile(idx){
-      const tile = state.board[idx];
-      if(!tile || tile.revealed) return;
-      // reveal on DB
-      const updates = {};
-      updates[`rooms/${state.room}/board/${idx}/revealed`] = true;
-      await update(ref(db), updates);
-      pushMoveLog(`${state.playerName} flipped tile ${idx} → ${tile.piece} (${tile.color})`);
-      // assign player color if none
-      const myPRef = ref(db, `rooms/${state.room}/players/${state.playerId}`);
-      const pSnap = await new Promise(res => { onValue(myPRef, s => res(s), {onlyOnce:true}); });
-      const curr = pSnap.val() || {};
-      if(!curr.color && tile.color){
-        await update(myPRef, { color: tile.color });
-      }
-      // advance turn
-      const other = otherPlayerId();
-      await set(ref(db, `rooms/${state.room}/turn`), other || state.playerId);
-    }
-
-    async function attemptMove(fromIdx, toIdx){
-      if(state.winner) return;
-      const from = state.board[fromIdx];
-      const to = state.board[toIdx];
-      if(!from || !from.revealed || !from.piece) return;
-      if(from.color !== state.playerColor) return;
-      if(!neighbors(fromIdx).includes(toIdx)) return;
-      if(to && !to.revealed) return;
-      if(!to || to.piece === null){
-        const updates = {};
-        updates[`rooms/${state.room}/board/${toIdx}`] = { piece: from.piece, color: from.color, revealed: true };
-        updates[`rooms/${state.room}/board/${fromIdx}`] = { piece: null, color: null, revealed: true };
-        await update(ref(db), updates);
-        pushMoveLog(`${state.playerName} moved ${from.piece} from ${fromIdx} → ${toIdx}`);
-        state.selectedIndex = null;
-        const other = otherPlayerId();
-        await set(ref(db, `rooms/${state.room}/turn`), other || state.playerId);
-        return;
-      }
-      if(to.piece && to.color && to.color !== from.color){
-        if(canCapture(from.piece, to.piece)){
-          const isGeneral = (to.piece === '将');
-          const updates = {};
-          updates[`rooms/${state.room}/board/${toIdx}`] = { piece: from.piece, color: from.color, revealed: true };
-          updates[`rooms/${state.room}/board/${fromIdx}`] = { piece: null, color: null, revealed: true };
-          await update(ref(db), updates);
-          pushMoveLog(`${state.playerName} captured ${to.piece} at ${toIdx} with ${from.piece}`);
-          if(isGeneral){
-            await set(ref(db, `rooms/${state.room}/winner`), { winnerId: state.playerId, winnerName: state.playerName });
-          } else {
-            const other = otherPlayerId();
-            await set(ref(db, `rooms/${state.room}/turn`), other || state.playerId);
-          }
-          state.selectedIndex = null;
-          return;
+    const plats = [];
+    for(let i=0; i<10; i++) {
+        let y = 730 - (i*70);
+        if(i === 4 || i === 7) { 
+            plats.push({x: 0, y: y, w: 120}, {x: 330, y: y, w: 120}); // Broken Gaps
         } else {
-          alert('Invalid capture: attacker cannot capture this piece.');
-          return;
+            plats.push({x: i%2===0 ? 0 : 50, y: y, w: 400});
         }
-      }
     }
 
-    // join / leave
-    async function joinRoom(){
-      const name = safeName((nameInput.value||'').trim()) || ('Player'+state.playerId.slice(0,3));
-      const room = (roomInput.value||'').trim();
-      if(!room){ alert('Please enter a room code'); return; }
-      // check players count first
-      const playersRef = ref(db, `rooms/${room}/players`);
-      const snap = await new Promise(res => { onValue(playersRef, s => res(s), {onlyOnce:true}); });
-      const existing = snap.val() || {};
-      if(Object.keys(existing).length >= 2){
-        alert('Room is full. Choose another code.');
-        return;
-      }
-      state.playerName = name;
-      state.room = room;
-      state.joinedAt = Date.now();
-      const playerRef = ref(db, `rooms/${room}/players/${state.playerId}`);
-      await set(playerRef, { id: state.playerId, name: state.playerName, color: null, joinedAt: state.joinedAt, lastSeen: Date.now() });
-      try{ playerRef.onDisconnect().remove(); }catch(e){}
-      joinCard.style.display = 'none';
-      playersCard.style.display = 'block';
-      boardWrap.style.display = 'block';
-      roomLabel.textContent = `Room: ${room}`;
-      onValue(ref(db, `rooms/${room}/players`), snap => {
-        const val = snap.val() || {};
-        state.players = val;
-        renderPlayers();
-        if(Object.keys(val).length === 1){
-          ensureBoardExists(room);
+    const lads = [];
+    for(let i=0; i<9; i++) {
+        lads.push({x: i%2===0 ? 380 : 50, y: 730 - ((i+1)*70), h: 70});
+    }
+
+    window.joinRoom = () => {
+        pName = document.getElementById("name").value.toUpperCase() || "USR";
+        room = document.getElementById("room").value || "global";
+        document.getElementById("setup").style.display = "none";
+        
+        onValue(ref(db, `k/${room}/p`), s => players = s.val() || {});
+        onValue(ref(db, `k/${room}/b`), s => barrels = s.val() || []);
+        onValue(ref(db, `k/${room}/f`), s => fires = s.val() || []);
+        onValue(ref(db, `k/${room}/state`), s => {
+            gameState = s.val() || { active: true };
+            document.getElementById("winOverlay").style.display = gameState.active ? "none" : "block";
+            if(!gameState.active && gameState.winner) document.getElementById("winnerMsg").innerText = `${gameState.winner} ASCENDED`;
+        });
+        
+        onValue(ref(db, `k/${room}/chat`), s => {
+            const box = document.getElementById("chatBox");
+            box.innerHTML = Object.values(s.val() || {}).map(m => `<div>[${m.user}]: ${m.msg}</div>`).join("");
+            box.scrollTop = box.scrollHeight;
+        });
+
+        onValue(ref(db, `k/${room}/history`), s => {
+            const hist = Object.values(s.val() || {});
+            document.getElementById("historyLog").innerHTML = hist.reverse().map(h => `> RD_${h.round}: ${h.winner}`).join("<br>");
+            
+            // Leaderboard Logic
+            const wins = {};
+            hist.forEach(h => wins[h.winner] = (wins[h.winner] || 0) + 1);
+            const sorted = Object.entries(wins).sort((a,b) => b[1] - a[1]);
+            document.getElementById("leaderboard").innerHTML = sorted.map(e => `[${e[1]}] ${e[0]}`).join("<br>");
+        });
+
+        setInterval(() => {
+            if(Object.keys(players)[0] === pId && gameState.active) {
+                if(Math.random() > 0.4) spawnB();
+                if(Math.random() > 0.7) dropFire();
+            }
+        }, 1200);
+
+        loop();
+    };
+
+    function spawnB() {
+        let f = [1, 2, 3, 5, 6, 8][Math.floor(Math.random() * 6)];
+        barrels.push({ x: f%2===0?10:430, y: 730-(f*70)-15, vx: f%2===0?3.5:-3.5 });
+        if(barrels.length > 15) barrels.shift();
+        set(ref(db, `k/${room}/b`), barrels);
+    }
+
+    function dropFire() {
+        let tx = 225, ly = 750;
+        Object.values(players).forEach(p => { if(p.y < ly) { ly = p.y; tx = p.x; }});
+        fires.push({ x: tx, y: ly, t: Date.now() + 2000 });
+        set(ref(db, `k/${room}/f`), fires);
+        setTimeout(() => {
+            fires = fires.filter(fi => fi.t > Date.now());
+            set(ref(db, `k/${room}/f`), fires);
+        }, 2100);
+    }
+
+    window.restartGame = () => {
+        set(ref(db, `k/${room}/state`), { active: true });
+        set(ref(db, `k/${room}/b`), []);
+        set(ref(db, `k/${room}/f`), []);
+        reset();
+    };
+
+    document.getElementById("chatInput").onkeydown = e => {
+        if(e.key === "Enter" && e.target.value) {
+            push(ref(db, `k/${room}/chat`), { user: pName, msg: e.target.value });
+            e.target.value = "";
         }
-        const keys = Object.keys(val);
-        if(keys.length === 1 && state.winner == null){
-          const remainingId = keys[0];
-          if(remainingId === state.playerId){
-            set(ref(db, `rooms/${room}/winner`), { winnerId: state.playerId, winnerName: state.playerName });
-          }
+    };
+
+    window.onkeydown = e => keys[e.code] = true;
+    window.onkeyup = e => keys[e.code] = false;
+    function reset() { me.x = 20; me.y = 710; me.vy = 0; }
+
+    function update() {
+        if(!gameState.active) return;
+        me.onL = false;
+        lads.forEach(l => { if(me.x + 10 > l.x && me.x < l.x + 20 && me.y + 15 > l.y && me.y < l.y + l.h) me.onL = true; });
+
+        if(me.onL && keys['KeyS']) { me.y -= 3; me.vy = 0; }
+        else {
+            if(keys['KeyA']) me.x -= 2.8;
+            if(keys['KeyD']) me.x += 2.8;
+            if(keys['KeyW'] && me.vy === 0) me.vy = -8;
+            me.vy += 0.45; me.y += me.vy;
         }
-        // show game header when there are players
-        document.getElementById('gameHeader').style.display = 'flex';
-      });
-      onValue(ref(db, `rooms/${room}/board`), snap => { state.board = snap.val() || null; renderBoard(); });
-      onValue(ref(db, `rooms/${room}/turn`), snap => { state.turnId = snap.val(); renderTurn(); });
-      onValue(ref(db, `rooms/${room}/winner`), snap => { state.winner = snap.val(); if(state.winner) showWinnerModal(state.winner); else removeWinnerModal(); });
-      onValue(ref(db, `rooms/${room}/chat`), snap => { renderChat(snap.val() || {}); });
-      onValue(ref(db, `rooms/${room}/rematch`), snap => { const data = snap.val(); if(data) ensureBoardExists(room, {forceReset:true}); });
-      onValue(ref(db, `rooms/${room}/players/${state.playerId}`), snap => { const p = snap.val(); if(p){ state.playerColor = p.color || state.playerColor; renderPlayers(); renderTurn(); } });
-      pushMoveLog(`${state.playerName} joined room ${room}`);
-    }
 
-    async function leaveRoom(){
-      if(!state.room) return;
-      await remove(ref(db, `rooms/${state.room}/players/${state.playerId}`));
-      cleanupLocalListeners();
-      resetLocalUI();
-    }
+        plats.forEach(p => { if(me.x+10 > p.x && me.x < p.x+p.w && me.y+15 > p.y && me.y+15 < p.y+5 && me.vy >= 0) { me.y = p.y-15; me.vy = 0; }});
+        if(me.y > 750) reset();
+        barrels.forEach(b => { if(Math.hypot(me.x-b.x, me.y-b.y) < 15) reset(); });
+        fires.forEach(f => { if(Math.hypot(me.x-f.x, me.y-f.y) < 22) reset(); });
 
-    function cleanupLocalListeners(){
-      if(state.room){
-        off(ref(db, `rooms/${state.room}/players`));
-        off(ref(db, `rooms/${state.room}/board`));
-        off(ref(db, `rooms/${state.room}/turn`));
-        off(ref(db, `rooms/${state.room}/chat`));
-        off(ref(db, `rooms/${state.room}/winner`));
-        off(ref(db, `rooms/${state.room}/rematch`));
-      }
-    }
-
-    function resetLocalUI(){
-      state.room = null; state.playerColor=null; state.board=null; state.players={}; state.turnId=null; state.winner=null; state.selectedIndex=null; state.moveLog=[];
-      joinCard.style.display = 'block';
-      playersCard.style.display = 'none';
-      boardWrap.style.display = 'none';
-      roomLabel.textContent = `Room: —`;
-      boardEl.innerHTML = ''; messagesEl.innerHTML=''; playersList.innerHTML=''; renderMoveLog();
-      document.getElementById('gameHeader').style.display = 'none';
-    }
-
-    async function ensureBoardExists(room,{forceReset=false} = {}){
-      const bRef = ref(db, `rooms/${room}/board`);
-      const snap = await new Promise(res => { onValue(bRef, s => res(s), {onlyOnce:true}); });
-      if(!snap.exists() || forceReset){
-        await createAndWriteBoard(room);
-      }
-    }
-
-    // chat
-    async function sendChat(){
-      if(!state.room) return;
-      const txt = (chatInput.value||'').trim();
-      if(!txt) return;
-      const color = state.playerColor || 'grey';
-      const msgObj = { userId: state.playerId, user: state.playerName, color: color, msg: txt, ts: Date.now() };
-      await push(ref(db, `rooms/${state.room}/chat`), msgObj);
-      chatInput.value = '';
-    }
-    function renderChat(data){
-      const arr = Object.values(data || {}).sort((a,b)=> (a.ts||0) - (b.ts||0));
-      messagesEl.innerHTML = arr.map(m=>{
-        const name = escapeHtml(m.user || 'Anon');
-        const msg = escapeHtml(m.msg || '');
-        const color = m.color === 'red' ? 'var(--red)' : (m.color === 'black' ? 'var(--blackish)' : '#7b8b95');
-        return `<div class="msg"><span class="who" style="color:${color}">${name}</span><span style="color:#333">${msg}</span></div>`;
-      }).join('');
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    // rematch
-    async function requestRematch(){
-      if(!state.room) return;
-      await set(ref(db, `rooms/${state.room}/rematch`), { by: state.playerId, at: Date.now() });
-      const playersKeys = Object.keys(state.players || {});
-      const updates = {};
-      playersKeys.forEach(id => updates[`rooms/${state.room}/players/${id}/color`] = null);
-      await update(ref(db), updates);
-      pushMoveLog(`${state.playerName} requested rematch.`);
-    }
-
-    // rendering
-    function renderPlayers(){
-      playersList.innerHTML = Object.keys(state.players||{}).map(id=>{
-        const p = state.players[id];
-        const colorDot = p.color === 'red' ? '#e74c3c' : (p.color === 'black' ? '#2c3e50' : '#b0b7bd');
-        const label = id === state.playerId ? '(You)' : '';
-        return `<div class="player-row"><div class="avatar" style="background:${colorDot}">${(p.name||'P').slice(0,1).toUpperCase()}</div><div style="display:flex; flex-direction:column"><div class="name-col">${escapeHtml(p.name||'Player')} ${label}</div><div class="status">Color: ${p.color||'—'}</div></div></div>`;
-      }).join('');
-    }
-
-    function renderBoard(){
-      boardEl.innerHTML = '';
-      if(!state.board){
-        for(let i=0;i<32;i++){
-          const el = document.createElement('div'); el.className='tile hidden'; el.textContent='■'; el.dataset.index = i;
-          boardEl.appendChild(el);
+        if(me.y < 50) {
+            let rd = (document.getElementById("historyLog").innerHTML.split("<br>").filter(x=>x).length + 1);
+            set(ref(db, `k/${room}/state`), { active: false, winner: pName });
+            push(ref(db, `k/${room}/history`), { round: rd, winner: pName });
         }
-        return;
-      }
-      for(let i=0;i<32;i++){
-        const t = state.board[i];
-        const el = document.createElement('div');
-        el.className = 'tile';
-        el.dataset.index = i;
-        if(!t || t.piece === null){
-          el.classList.add('empty');
-          el.innerHTML = '';
-        } else if(!t.revealed){
-          el.classList.add('hidden');
-          el.innerHTML = '<div style="font-size:20px">■</div>';
-        } else {
-          el.classList.add('revealed');
-          const ch = tileChar(t);
-          const colorStyle = (t.color === 'red') ? `color:var(--red)` : `color:var(--blackish)`;
-          el.innerHTML = `<div class="char" style="${colorStyle}">${escapeHtml(ch)}</div><div class="sub">${t.color}</div>`;
-        }
-        if(state.selectedIndex === i) el.classList.add('selected');
-        if(state.selectedIndex !== null && state.board[state.selectedIndex] && state.board[state.selectedIndex].color === state.playerColor){
-          const allowed = neighbors(state.selectedIndex).filter(n=>{
-            const tileTo = state.board[n];
-            if(!tileTo) return true;
-            if(!tileTo.revealed) return false;
-            if(tileTo.piece === null) return true;
-            if(tileTo.color !== state.playerColor) return canCapture(state.board[state.selectedIndex].piece, tileTo.piece);
-            return false;
-          });
-          if(allowed.includes(i)) el.classList.add('green');
-        }
-        boardEl.appendChild(el);
-      }
+        update(ref(db, `k/${room}/p/${pId}`), {x: me.x, y: me.y, n: pName, c: myCol});
     }
 
-    function renderTurn(){
-      if(!state.turnId){
-        turnText.textContent = 'Waiting...';
-        turnDot.style.background = '#cbd5e1';
-        return;
-      }
-      const who = state.players[state.turnId];
-      if(!who){
-        turnText.textContent = 'Waiting for opponent...';
-        turnDot.style.background = '#cbd5e1';
-        return;
-      }
-      const color = who.color || 'grey';
-      const name = who.name || 'Player';
-      const colorDotColor = color === 'red' ? 'var(--red)' : (color === 'black' ? 'var(--blackish)' : '#cbd5e1');
-      turnDot.style.background = colorDotColor;
-      if(state.turnId === state.playerId){
-        turnText.textContent = `Your turn — ${name}`;
-      } else {
-        turnText.textContent = `${name}'s turn`;
-      }
+    function draw() {
+        ctx.clearRect(0,0,450,750);
+        ctx.fillStyle = "#ccc"; plats.forEach(p => ctx.fillRect(p.x, p.y, p.w, 2));
+        ctx.fillStyle = "#eee"; lads.forEach(l => ctx.fillRect(l.x, l.y, 20, l.h));
+        
+        // Sector Bosses & Hazards
+        ctx.fillStyle = "#fdd"; [1, 2, 3, 5, 6, 8].forEach(f => ctx.fillRect(f%2===0?5:425, 730-(f*70)-20, 20, 20));
+        ctx.fillStyle = "#eef"; let tx = 225 + Math.sin(Date.now()/500)*150; ctx.fillRect(tx, 15, 35, 35);
+        ctx.fillStyle = "orange"; barrels.forEach(b => { ctx.fillRect(b.x, b.y, 10, 10); b.x += b.vx; });
+        ctx.fillStyle = "red"; fires.forEach(f => { ctx.font = "bold 15px monospace"; ctx.fillText(". .. ...", f.x-15, f.y+5); });
+
+        // Players
+        Object.keys(players).forEach(id => {
+            let p = players[id]; ctx.fillStyle = p.c;
+            ctx.fillRect(p.x, p.y, 12, 16);
+            ctx.font = "8px monospace"; ctx.fillText(p.n, p.x-2, p.y-4);
+        });
     }
 
-    // winner modal
-    function showWinnerModal(winnerObj){
-      removeWinnerModal();
-      const modalWrap = document.getElementById('modalHost');
-      const el = document.createElement('div');
-      el.className = 'overlay';
-      el.innerHTML = `<div class="modal">
-        <h2>🏆 GAME OVER</h2>
-        <p>${escapeHtml(winnerObj.winnerName || winnerObj)}</p>
-        <div style="margin-top:8px">${winnerObj.winnerId === state.playerId ? '<b>You win!</b>' : 'You lose'}</div>
-        <div style="margin-top:16px" class="actions">
-          <button id="modalRematch" class="btn primary">Rematch</button>
-          <button id="modalLeave" class="btn">Leave</button>
-        </div>
-      </div>`;
-      modalWrap.appendChild(el);
-      document.getElementById('modalRematch').onclick = async () => { await requestRematch(); removeWinnerModal(); };
-      document.getElementById('modalLeave').onclick = async () => { await leaveRoom(); removeWinnerModal(); };
-    }
-    function removeWinnerModal(){ const host = document.getElementById('modalHost'); host.innerHTML = ''; }
-
-    // initial skeleton
-    (function initSkeleton(){ boardEl.innerHTML = ''; for(let i=0;i<32;i++){ const el = document.createElement('div'); el.className='tile hidden'; el.textContent='■'; el.dataset.index = i; boardEl.appendChild(el); } })();
-
-    // unload cleanup
-    window.addEventListener('beforeunload', async () => {
-      if(state.room && state.playerId){
-        try{ await remove(ref(db, `rooms/${state.room}/players/${state.playerId}`)); }catch(e){}
-      }
-    });
-
-  </script>
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+</script>
 </body>
 </html>
