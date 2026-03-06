@@ -1,162 +1,378 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Internal Data Monitor</title>
     <style>
-        body { font-family: monospace; background: #f0f0f0; margin: 0; overflow: hidden; color: #444; }
-        #main { display: none; justify-content: center; padding: 20px; gap: 10px; }
-        canvas { background: #fff; border: 1px solid #ccc; }
-        .side-panel { width: 220px; display: flex; flex-direction: column; gap: 10px; }
-        .box { background: white; border: 1px solid #ccc; padding: 10px; font-size: 11px; }
-        #chatBox { height: 120px; overflow-y: auto; border-bottom: 1px solid #eee; margin-bottom: 5px; }
-        #chatInput { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; }
-        #historyLog, #leaderboard { height: 120px; overflow-y: auto; color: #666; font-size: 10px; }
-        #setup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border: 1px solid #999; text-align: center; }
-        .win-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; padding: 30px; text-align: center; display: none; z-index: 500; }
+        body { font-family: 'Courier New', Courier, monospace; background: #e9ecef; margin: 0; overflow: hidden; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        #app-container { display: flex; gap: 15px; display: none; }
+        canvas { background: #fff; border: 1px solid #ced4da; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        
+        .panel { width: 240px; display: flex; flex-direction: column; gap: 10px; }
+        .box { background: white; border: 1px solid #ced4da; padding: 12px; font-size: 12px; }
+        .box-header { font-weight: bold; border-bottom: 1px solid #dee2e6; padding-bottom: 5px; margin-bottom: 8px; color: #495057; }
+        
+        #chatBox { height: 140px; overflow-y: auto; margin-bottom: 8px; color: #495057; }
+        #chatInput { width: 100%; border: 1px solid #ced4da; padding: 6px; box-sizing: border-box; font-family: inherit; }
+        #historyLog, #leaderboard { height: 130px; overflow-y: auto; color: #6c757d; font-size: 11px; }
+
+        #setup-screen { background: white; padding: 40px; border: 1px solid #ced4da; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: left; width: 300px; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; font-size: 12px; font-weight: bold; color: #6c757d; margin-bottom: 4px; }
+        .input-group input { width: 100%; padding: 8px; border: 1px solid #ced4da; box-sizing: border-box; font-family: inherit; }
+        button { width: 100%; padding: 10px; background: #f8f9fa; border: 1px solid #ced4da; cursor: pointer; font-family: inherit; font-weight: bold; color: #495057; transition: background 0.2s; }
+        button:hover { background: #e2e6ea; }
+        
+        #status-msg { margin-top: 10px; font-size: 11px; color: #dc3545; text-align: center; height: 15px; }
+
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; display: none; flex-direction: column; }
+        .overlay-card { background: white; padding: 30px; border: 2px solid #343a40; text-align: center; }
     </style>
 </head>
 <body>
 
-<div id="setup">
-    <strong>[NODE_ACCESS_PORTAL]</strong><br><br>
-    USR_ID: <input id="name" placeholder="INIT" maxlength="5" style="width:60px;"><br><br>
-    NODE_ID: <input id="room" placeholder="000" style="width:60px;"><br><br>
-    <button id="btnConnect">INITIATE_SESSION</button>
+<div id="setup-screen">
+    <div style="font-weight: bold; font-size: 16px; margin-bottom: 20px; text-align: center;">[SECURE_NODE_LOGIN]</div>
+    <div class="input-group">
+        <label>OPERATOR_ID (Max 4 chars)</label>
+        <input id="inp-name" type="text" maxlength="4" placeholder="e.g. ALX">
+    </div>
+    <div class="input-group">
+        <label>TARGET_NODE (Room Code)</label>
+        <input id="inp-room" type="text" placeholder="e.g. 777">
+    </div>
+    <button id="btn-connect">ESTABLISH_CONNECTION</button>
+    <div id="status-msg"></div>
 </div>
 
-<div id="main">
-    <canvas id="g"></canvas>
-    <div class="side-panel">
-        <div class="box"><strong>🏆 LEADERBOARD</strong><div id="leaderboard"></div></div>
-        <div class="box"><strong>📜 HISTORY</strong><div id="historyLog"></div></div>
-        <div class="box"><strong>💬 COMMS</strong><div id="chatBox"></div><input id="chatInput" placeholder="Type msg..."></div>
+<div id="app-container">
+    <canvas id="gameCanvas" width="500" height="750"></canvas>
+    
+    <div class="panel">
+        <div class="box">
+            <div class="box-header">🏆 METRICS_LEADERBOARD</div>
+            <div id="leaderboard">Awaiting data...</div>
+        </div>
+        <div class="box">
+            <div class="box-header">📜 SESSION_LOGS</div>
+            <div id="historyLog">No recorded ascensions.</div>
+        </div>
+        <div class="box">
+            <div class="box-header">💬 INTERNAL_COMMS</div>
+            <div id="chatBox"></div>
+            <input id="chatInput" type="text" placeholder="Transmit message... (Press Enter)">
+        </div>
     </div>
 </div>
 
-<div id="winOverlay" class="win-overlay">
-    <h2 id="winnerMsg">USER WON</h2>
-    <button onclick="location.reload()">RESTART_SEQUENCE</button>
+<div id="win-screen" class="overlay">
+    <div class="overlay-card">
+        <h2 id="win-text" style="margin-top:0;">OPERATOR ASCENDED</h2>
+        <p>Simulation suspended. Awaiting reset.</p>
+        <button id="btn-restart" style="margin-top: 15px;">REINITIALIZE_NODE</button>
+    </div>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue, update, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getDatabase, ref, set, onValue, update, push, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-    const fb = initializeApp({
+    // Firebase Configuration
+    const firebaseConfig = {
         apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
         authDomain: "mindbattle-f00a3.firebaseapp.com",
         databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
         projectId: "mindbattle-f00a3"
-    });
-    const db = getDatabase(fb);
-    const c = document.getElementById("g");
-    const ctx = c.getContext("2d");
-    c.width = 450; c.height = 750;
-
-    let room = "", pName = "", pId = Math.random().toString(36).substr(7);
-    let myCol = `hsl(${Math.random() * 360}, 50%, 45%)`;
-    let players = {}, barrels = [], fires = [], gameState = { active: true };
-    let me = { x: 20, y: 710, vx: 0, vy: 0, onL: false };
-    let keys = {};
-
-    const plats = [];
-    for(let i=0; i<10; i++) {
-        let y = 730 - (i*70);
-        if(i === 4 || i === 7) { plats.push({x:0, y:y, w:120}, {x:330, y:y, w:120}); } 
-        else { plats.push({x: i%2===0?0:50, y:y, w:400}); }
-    }
-    const lads = [];
-    for(let i=0; i<9; i++) { lads.push({x: i%2===0?380:50, y:730-((i+1)*70), h:70}); }
-
-    document.getElementById("btnConnect").onclick = () => {
-        pName = document.getElementById("name").value.toUpperCase() || "USR";
-        room = document.getElementById("room").value || "999";
-        document.getElementById("setup").style.display = "none";
-        document.getElementById("main").style.display = "flex";
-        
-        onValue(ref(db, `k/${room}/p`), s => players = s.val() || {});
-        onValue(ref(db, `k/${room}/b`), s => barrels = s.val() || []);
-        onValue(ref(db, `k/${room}/f`), s => fires = s.val() || []);
-        onValue(ref(db, `k/${room}/state`), s => {
-            gameState = s.val() || { active: true };
-            document.getElementById("winOverlay").style.display = gameState.active ? "none" : "block";
-            if(gameState.winner) document.getElementById("winnerMsg").innerText = `${gameState.winner} WON`;
-        });
-        onValue(ref(db, `k/${room}/chat`), s => {
-            document.getElementById("chatBox").innerHTML = Object.values(s.val()||{}).map(m=>`<div>[${m.user}]: ${m.msg}</div>`).join("");
-        });
-        onValue(ref(db, `k/${room}/history`), s => {
-            const h = Object.values(s.val()||{});
-            document.getElementById("historyLog").innerHTML = h.reverse().map(x=>`> RD${x.round}: ${x.winner}`).join("<br>");
-            const wins = {}; h.forEach(x => wins[x.winner] = (wins[x.winner]||0)+1);
-            document.getElementById("leaderboard").innerHTML = Object.entries(wins).sort((a,b)=>b[1]-a[1]).map(e=>`[${e[1]}] ${e[0]}`).join("<br>");
-        });
-
-        setInterval(() => {
-            if(Object.keys(players)[0] === pId && gameState.active) {
-                if(Math.random() > 0.4) {
-                    let f = [1, 2, 3, 5, 6, 8][Math.floor(Math.random()*6)];
-                    barrels.push({x: f%2===0?10:430, y: 730-(f*70)-15, vx: f%2===0?3.5:-3.5});
-                    if(barrels.length > 12) barrels.shift();
-                    set(ref(db, `k/${room}/b`), barrels);
-                }
-                if(Math.random() > 0.8) {
-                    let tx = 225, ly = 750;
-                    Object.values(players).forEach(p => { if(p.y < ly) { ly = p.y; tx = p.x; }});
-                    fires.push({x: tx, y: ly, t: Date.now()+2000});
-                    set(ref(db, `k/${room}/f`), fires);
-                }
-            }
-        }, 1200);
-        loop();
     };
 
-    window.onkeydown = e => keys[e.code] = true;
-    window.onkeyup = e => keys[e.code] = false;
-    document.getElementById("chatInput").onkeydown = e => {
-        if(e.key === "Enter" && e.target.value) {
-            push(ref(db, `k/${room}/chat`), { user: pName, msg: e.target.value });
+    let db;
+    try {
+        const app = initializeApp(firebaseConfig);
+        db = getDatabase(app);
+    } catch (e) {
+        document.getElementById("status-msg").innerText = "DB_INIT_ERROR: Check console.";
+        console.error("Firebase Init Failed:", e);
+    }
+
+    // Core Game Variables
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    
+    let room = "", pName = "", pId = "USR_" + Math.floor(Math.random() * 9999);
+    let myColor = `hsl(${Math.floor(Math.random() * 360)}, 60%, 45%)`;
+    
+    let players = {}, barrels = [], fires = [];
+    let state = { active: true, winner: null };
+    
+    // Player Physics State
+    let me = { x: 20, y: 710, vx: 0, vy: 0, climbing: false };
+    let keys = { a: false, d: false, w: false, s: false };
+
+    // Level Design: 10 Floors
+    const platforms = [];
+    for(let i=0; i<10; i++) {
+        let y = 730 - (i * 70);
+        if(i === 3 || i === 7) { 
+            // Broken floors (Gaps)
+            platforms.push({ x: 0, y: y, w: 160 }, { x: 340, y: y, w: 160 });
+        } else {
+            platforms.push({ x: i % 2 === 0 ? 0 : 60, y: y, w: 440 });
+        }
+    }
+
+    // Ladders (Connecting the zig-zags)
+    const ladders = [];
+    for(let i=0; i<9; i++) {
+        ladders.push({ x: i % 2 === 0 ? 420 : 60, y: 730 - ((i+1) * 70), w: 24, h: 70 });
+    }
+
+    // Connect to Room Logic
+    document.getElementById("btn-connect").addEventListener("click", () => {
+        pName = document.getElementById("inp-name").value.trim().toUpperCase() || "OPR";
+        room = document.getElementById("inp-room").value.trim() || "DEFAULT";
+        
+        document.getElementById("status-msg").style.color = "#28a745";
+        document.getElementById("status-msg").innerText = "Authenticating...";
+
+        try {
+            // Setup Disconnect Hook
+            const myRef = ref(db, `nodes/${room}/players/${pId}`);
+            onDisconnect(myRef).remove();
+
+            // Listeners
+            onValue(ref(db, `nodes/${room}/players`), s => players = s.val() || {});
+            onValue(ref(db, `nodes/${room}/barrels`), s => barrels = s.val() || []);
+            onValue(ref(db, `nodes/${room}/fires`), s => fires = s.val() || []);
+            onValue(ref(db, `nodes/${room}/state`), s => {
+                state = s.val() || { active: true };
+                document.getElementById("win-screen").style.display = state.active ? "none" : "flex";
+                if (!state.active && state.winner) {
+                    document.getElementById("win-text").innerText = `[${state.winner}] ASCENDED`;
+                }
+            });
+
+            // UI Listeners (Chat & History)
+            onValue(ref(db, `nodes/${room}/chat`), s => {
+                const box = document.getElementById("chatBox");
+                box.innerHTML = Object.values(s.val()||{}).map(m => `<div><b>${m.n}:</b> ${m.msg}</div>`).join("");
+                box.scrollTop = box.scrollHeight;
+            });
+
+            onValue(ref(db, `nodes/${room}/history`), s => {
+                const logs = Object.values(s.val()||{});
+                document.getElementById("historyLog").innerHTML = logs.reverse().map(l => `> Sequence_${l.id}: <b>${l.win}</b>`).join("<br>");
+                
+                // Calculate Leaderboard
+                const tally = {};
+                logs.forEach(l => tally[l.win] = (tally[l.win] || 0) + 1);
+                const sorted = Object.entries(tally).sort((a,b) => b[1] - a[1]);
+                document.getElementById("leaderboard").innerHTML = sorted.map(e => `[${e[1]} Wins] - <b>${e[0]}</b>`).join("<br>") || "No data.";
+            });
+
+            // Start Host Loop (Hazards)
+            setInterval(hostHazardLoop, 1000);
+
+            // Transition UI
+            document.getElementById("setup-screen").style.display = "none";
+            document.getElementById("app-container").style.display = "flex";
+            
+            // Start Game Loop
+            requestAnimationFrame(gameLoop);
+
+        } catch (err) {
+            document.getElementById("status-msg").style.color = "#dc3545";
+            document.getElementById("status-msg").innerText = "NETWORK_ERR: Connection blocked.";
+        }
+    });
+
+    // Chat Input
+    document.getElementById("chatInput").addEventListener("keypress", (e) => {
+        if (e.key === "Enter" && e.target.value.trim() !== "") {
+            push(ref(db, `nodes/${room}/chat`), { n: pName, msg: e.target.value.trim() });
             e.target.value = "";
         }
-    };
+    });
 
-    function update() {
-        if(!gameState.active) return;
-        me.onL = false;
-        lads.forEach(l => { if(me.x+10 > l.x && me.x < l.x+20 && me.y+15 > l.y && me.y < l.y+l.h) me.onL = true; });
-        if(me.onL && keys['KeyS']) { me.y -= 3; me.vy = 0; }
-        else {
-            if(keys['KeyA']) me.x -= 2.8; if(keys['KeyD']) me.x += 2.8;
-            if(keys['KeyW'] && me.vy === 0) me.vy = -8;
-            me.vy += 0.45; me.y += me.vy;
+    // Restart sequence
+    document.getElementById("btn-restart").addEventListener("click", () => {
+        set(ref(db, `nodes/${room}/state`), { active: true, winner: null });
+        set(ref(db, `nodes/${room}/barrels`), []);
+        set(ref(db, `nodes/${room}/fires`), []);
+        resetPlayer();
+    });
+
+    // Input Handling
+    window.addEventListener("keydown", e => {
+        if(e.code === 'KeyA') keys.a = true;
+        if(e.code === 'KeyD') keys.d = true;
+        if(e.code === 'KeyW') keys.w = true;
+        if(e.code === 'KeyS') keys.s = true;
+    });
+    window.addEventListener("keyup", e => {
+        if(e.code === 'KeyA') keys.a = false;
+        if(e.code === 'KeyD') keys.d = false;
+        if(e.code === 'KeyW') keys.w = false;
+        if(e.code === 'KeyS') keys.s = false;
+    });
+
+    // Host Logic for Hazards
+    function hostHazardLoop() {
+        if (!state.active) return;
+        
+        // Am I the host? (First player in the object)
+        const playerIds = Object.keys(players).sort();
+        if (playerIds[0] === pId) {
+            
+            // Spawn Barrels (Orange)
+            if (Math.random() > 0.3) {
+                const spawnFloors = [1, 2, 4, 5, 6, 8];
+                let f = spawnFloors[Math.floor(Math.random() * spawnFloors.length)];
+                let yPos = 730 - (f * 70) - 14;
+                let isEven = f % 2 === 0;
+                
+                barrels.push({ x: isEven ? 10 : 476, y: yPos, vx: isEven ? 4 : -4 });
+                if(barrels.length > 15) barrels.shift(); // Max 15 barrels
+                set(ref(db, `nodes/${room}/barrels`), barrels);
+            }
+
+            // Spawn Fire (Red - Targets Leader)
+            if (Math.random() > 0.6) {
+                let targetX = 250, highestY = 800;
+                Object.values(players).forEach(p => { if (p.y < highestY) { highestY = p.y; targetX = p.x; } });
+                
+                fires.push({ x: targetX, y: highestY, expires: Date.now() + 2500 });
+                set(ref(db, `nodes/${room}/fires`), fires);
+            }
+            
+            // Cleanup expired fires
+            let activeFires = fires.filter(f => f.expires > Date.now());
+            if(activeFires.length !== fires.length) set(ref(db, `nodes/${room}/fires`), activeFires);
         }
-        plats.forEach(p => { if(me.x+10 > p.x && me.x < p.x+p.w && me.y+15 > p.y && me.y+15 < p.y+5 && me.vy >= 0) { me.y = p.y-15; me.vy = 0; }});
-        if(me.y > 750) { me.x=20; me.y=710; }
-        barrels.forEach(b => { if(Math.hypot(me.x-b.x, me.y-b.y) < 15) { me.x=20; me.y=710; }});
-        fires.forEach(f => { if(Math.hypot(me.x-f.x, me.y-f.y) < 22) { me.x=20; me.y=710; }});
-        if(me.y < 50) {
-            let rd = document.getElementById("historyLog").innerHTML.split("<br>").filter(x=>x).length + 1;
-            set(ref(db, `k/${room}/state`), { active: false, winner: pName });
-            push(ref(db, `k/${room}/history`), { round: rd, winner: pName });
-        }
-        update(ref(db, `k/${room}/p/${pId}`), {x: me.x, y: me.y, n: pName, c: myCol});
     }
 
-    function draw() {
-        ctx.clearRect(0,0,450,750);
-        ctx.fillStyle = "#ccc"; plats.forEach(p => ctx.fillRect(p.x, p.y, p.w, 2));
-        ctx.fillStyle = "#eee"; lads.forEach(l => ctx.fillRect(l.x, l.y, 20, l.h));
-        ctx.fillStyle = "#fdd"; [1,2,3,5,6,8].forEach(f => ctx.fillRect(f%2===0?5:425, 730-(f*70)-20, 20, 20));
-        ctx.fillStyle = "#eef"; let tx = 225 + Math.sin(Date.now()/500)*150; ctx.fillRect(tx, 15, 35, 35);
-        ctx.fillStyle = "orange"; barrels.forEach(b => { ctx.fillRect(b.x, b.y, 10, 10); b.x += b.vx; });
-        ctx.fillStyle = "red"; fires.forEach(f => { if(f.t > Date.now()) ctx.fillText(". .. ...", f.x-15, f.y+5); });
+    function resetPlayer() {
+        me.x = 20; me.y = 710; me.vy = 0;
+    }
+
+    function updatePhysics() {
+        if (!state.active) return;
+
+        // 1. Check Ladder Collision
+        me.climbing = false;
+        ladders.forEach(l => {
+            if (me.x + 16 > l.x && me.x < l.x + l.w && me.y + 20 > l.y && me.y < l.y + l.h) {
+                me.climbing = true;
+            }
+        });
+
+        // 2. Movement
+        if (me.climbing && keys.s) {
+            me.y -= 3.5; // Climb up
+            me.vy = 0;
+        } else {
+            if (keys.a) me.x -= 3.5;
+            if (keys.d) me.x += 3.5;
+            
+            // Jump
+            if (keys.w && me.vy === 0) me.vy = -9;
+            
+            // Gravity
+            me.vy += 0.5;
+            me.y += me.vy;
+        }
+
+        // Screen Bounds
+        if (me.x < 0) me.x = 0;
+        if (me.x > 484) me.x = 484;
+
+        // 3. Platform Collision
+        platforms.forEach(p => {
+            // Only collide if falling downwards
+            if (me.vy >= 0 && me.x + 16 > p.x && me.x < p.x + p.w && me.y + 20 > p.y && me.y + 20 < p.y + 10) {
+                me.y = p.y - 20;
+                me.vy = 0;
+            }
+        });
+
+        // 4. Hazard Collision & Penalties
+        if (me.y > 780) resetPlayer(); // Fell off bottom
+
+        barrels.forEach(b => {
+            if (Math.hypot((me.x+8) - (b.x+7), (me.y+10) - (b.y+7)) < 15) resetPlayer();
+        });
+
+        fires.forEach(f => {
+            if (Math.hypot((me.x+8) - f.x, (me.y+10) - f.y) < 22) resetPlayer();
+        });
+
+        // 5. Win Condition (Reached Top)
+        if (me.y < 40) {
+            let nextId = document.getElementById("historyLog").innerHTML.split("<br>").filter(x=>x).length + 1;
+            set(ref(db, `nodes/${room}/state`), { active: false, winner: pName });
+            push(ref(db, `nodes/${room}/history`), { id: nextId, win: pName });
+        }
+
+        // Sync to Firebase
+        update(ref(db, `nodes/${room}/players/${pId}`), { x: me.x, y: me.y, n: pName, c: myColor });
+    }
+
+    function drawGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw Platforms
+        ctx.fillStyle = "#adb5bd";
+        platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, 3));
+
+        // Draw Ladders
+        ctx.fillStyle = "#dee2e6";
+        ladders.forEach(l => {
+            ctx.fillRect(l.x, l.y, 4, l.h);
+            ctx.fillRect(l.x + l.w - 4, l.y, 4, l.h);
+            for(let i = 10; i < l.h; i += 15) ctx.fillRect(l.x, l.y + i, l.w, 3);
+        });
+
+        // Draw Bosses (Kongs)
+        ctx.fillStyle = "#f8d7da"; // Junior Kongs
+        [1, 2, 4, 5, 6, 8].forEach(f => {
+            let isEven = f % 2 === 0;
+            ctx.fillRect(isEven ? 5 : 475, 730 - (f * 70) - 20, 20, 20);
+        });
+        
+        ctx.fillStyle = "#cce5ff"; // Big Boss (Top)
+        let bossX = 235 + Math.sin(Date.now() / 600) * 180;
+        ctx.fillRect(bossX, 10, 30, 30);
+
+        // Draw Hazards
+        ctx.fillStyle = "#fd7e14"; // Barrels
+        barrels.forEach(b => {
+            ctx.fillRect(b.x, b.y, 14, 14);
+            if (state.active) b.x += b.vx; 
+        });
+
+        ctx.fillStyle = "#dc3545"; // Fire
+        ctx.font = "bold 16px Courier New";
+        fires.forEach(f => {
+            if (f.expires > Date.now()) ctx.fillText(". .. ...", f.x - 20, f.y + 10);
+        });
+
+        // Draw Players
         Object.keys(players).forEach(id => {
-            let p = players[id]; ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, 12, 16);
-            ctx.font = "8px monospace"; ctx.fillText(p.n, p.x-2, p.y-4);
+            let p = players[id];
+            ctx.fillStyle = p.c;
+            ctx.fillRect(p.x, p.y, 16, 20);
+            
+            // Name Tag
+            ctx.fillStyle = "#495057";
+            ctx.font = "10px sans-serif";
+            ctx.fillText(p.n, p.x - 2, p.y - 4);
         });
     }
 
-    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    function gameLoop() {
+        updatePhysics();
+        drawGame();
+        requestAnimationFrame(gameLoop);
+    }
 </script>
 </body>
 </html>
