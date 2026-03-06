@@ -4,59 +4,43 @@
     <title>Internal Data Monitor</title>
     <style>
         body { font-family: monospace; background: #f0f0f0; margin: 0; overflow: hidden; color: #444; }
-        #main { display: flex; justify-content: center; padding: 20px; gap: 10px; }
-        canvas { background: #fff; border: 1px solid #ccc; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
-        
+        #main { display: none; justify-content: center; padding: 20px; gap: 10px; }
+        canvas { background: #fff; border: 1px solid #ccc; }
         .side-panel { width: 220px; display: flex; flex-direction: column; gap: 10px; }
         .box { background: white; border: 1px solid #ccc; padding: 10px; font-size: 11px; }
         #chatBox { height: 120px; overflow-y: auto; border-bottom: 1px solid #eee; margin-bottom: 5px; }
-        #chatInput { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; font-family: monospace; }
-        #historyLog, #leaderboard { height: 120px; overflow-y: auto; color: #666; border-top: 1px solid #eee; padding-top: 5px; }
-
-        #setup { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: white; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        #chatInput { width: 100%; border: 1px solid #ddd; padding: 4px; box-sizing: border-box; }
+        #historyLog, #leaderboard { height: 120px; overflow-y: auto; color: #666; font-size: 10px; }
+        #setup { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border: 1px solid #999; text-align: center; }
         .win-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; padding: 30px; text-align: center; display: none; z-index: 500; }
     </style>
 </head>
 <body>
 
 <div id="setup">
-    <div style="border: 1px solid #999; padding: 20px; background: #fff;">
-        <strong>[NODE_ACCESS_REQUIRED]</strong><br><br>
-        USR_ID: <input id="name" placeholder="Initials..." maxlength="5" style="width:80px;"><br><br>
-        ROOM: <input id="room" placeholder="000x00" style="width:80px;"><br><br>
-        <button onclick="joinRoom()">CONNECT</button>
-    </div>
+    <strong>[NODE_ACCESS_PORTAL]</strong><br><br>
+    USR_ID: <input id="name" placeholder="INIT" maxlength="5" style="width:60px;"><br><br>
+    NODE_ID: <input id="room" placeholder="000" style="width:60px;"><br><br>
+    <button id="btnConnect">INITIATE_SESSION</button>
 </div>
 
 <div id="main">
     <canvas id="g"></canvas>
-
     <div class="side-panel">
-        <div class="box">
-            <strong>🏆 LEADERBOARD</strong>
-            <div id="leaderboard">Calculating...</div>
-        </div>
-        <div class="box">
-            <strong>📜 ROUND_HISTORY</strong>
-            <div id="historyLog"></div>
-        </div>
-        <div class="box">
-            <strong>💬 COMMS</strong>
-            <div id="chatBox"></div>
-            <input id="chatInput" placeholder="Enter message...">
-        </div>
+        <div class="box"><strong>🏆 LEADERBOARD</strong><div id="leaderboard"></div></div>
+        <div class="box"><strong>📜 HISTORY</strong><div id="historyLog"></div></div>
+        <div class="box"><strong>💬 COMMS</strong><div id="chatBox"></div><input id="chatInput" placeholder="Type msg..."></div>
     </div>
 </div>
 
 <div id="winOverlay" class="win-overlay">
-    <h2 id="winnerMsg">USER_01 WON</h2>
-    <p>Session concluded. Synchronizing records...</p>
-    <button onclick="restartGame()">RESTART_SEQUENCE</button>
+    <h2 id="winnerMsg">USER WON</h2>
+    <button onclick="location.reload()">RESTART_SEQUENCE</button>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+    import { getDatabase, ref, set, onValue, update, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
     const fb = initializeApp({
         apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
@@ -72,28 +56,23 @@
     let room = "", pName = "", pId = Math.random().toString(36).substr(7);
     let myCol = `hsl(${Math.random() * 360}, 50%, 45%)`;
     let players = {}, barrels = [], fires = [], gameState = { active: true };
-    let me = { x: 50, y: 710, vx: 0, vy: 0, onL: false };
+    let me = { x: 20, y: 710, vx: 0, vy: 0, onL: false };
     let keys = {};
 
     const plats = [];
     for(let i=0; i<10; i++) {
         let y = 730 - (i*70);
-        if(i === 4 || i === 7) { 
-            plats.push({x: 0, y: y, w: 120}, {x: 330, y: y, w: 120}); // Broken Gaps
-        } else {
-            plats.push({x: i%2===0 ? 0 : 50, y: y, w: 400});
-        }
+        if(i === 4 || i === 7) { plats.push({x:0, y:y, w:120}, {x:330, y:y, w:120}); } 
+        else { plats.push({x: i%2===0?0:50, y:y, w:400}); }
     }
-
     const lads = [];
-    for(let i=0; i<9; i++) {
-        lads.push({x: i%2===0 ? 380 : 50, y: 730 - ((i+1)*70), h: 70});
-    }
+    for(let i=0; i<9; i++) { lads.push({x: i%2===0?380:50, y:730-((i+1)*70), h:70}); }
 
-    window.joinRoom = () => {
+    document.getElementById("btnConnect").onclick = () => {
         pName = document.getElementById("name").value.toUpperCase() || "USR";
-        room = document.getElementById("room").value || "global";
+        room = document.getElementById("room").value || "999";
         document.getElementById("setup").style.display = "none";
+        document.getElementById("main").style.display = "flex";
         
         onValue(ref(db, `k/${room}/p`), s => players = s.val() || {});
         onValue(ref(db, `k/${room}/b`), s => barrels = s.val() || []);
@@ -101,61 +80,39 @@
         onValue(ref(db, `k/${room}/state`), s => {
             gameState = s.val() || { active: true };
             document.getElementById("winOverlay").style.display = gameState.active ? "none" : "block";
-            if(!gameState.active && gameState.winner) document.getElementById("winnerMsg").innerText = `${gameState.winner} ASCENDED`;
+            if(gameState.winner) document.getElementById("winnerMsg").innerText = `${gameState.winner} WON`;
         });
-        
         onValue(ref(db, `k/${room}/chat`), s => {
-            const box = document.getElementById("chatBox");
-            box.innerHTML = Object.values(s.val() || {}).map(m => `<div>[${m.user}]: ${m.msg}</div>`).join("");
-            box.scrollTop = box.scrollHeight;
+            document.getElementById("chatBox").innerHTML = Object.values(s.val()||{}).map(m=>`<div>[${m.user}]: ${m.msg}</div>`).join("");
         });
-
         onValue(ref(db, `k/${room}/history`), s => {
-            const hist = Object.values(s.val() || {});
-            document.getElementById("historyLog").innerHTML = hist.reverse().map(h => `> RD_${h.round}: ${h.winner}`).join("<br>");
-            
-            // Leaderboard Logic
-            const wins = {};
-            hist.forEach(h => wins[h.winner] = (wins[h.winner] || 0) + 1);
-            const sorted = Object.entries(wins).sort((a,b) => b[1] - a[1]);
-            document.getElementById("leaderboard").innerHTML = sorted.map(e => `[${e[1]}] ${e[0]}`).join("<br>");
+            const h = Object.values(s.val()||{});
+            document.getElementById("historyLog").innerHTML = h.reverse().map(x=>`> RD${x.round}: ${x.winner}`).join("<br>");
+            const wins = {}; h.forEach(x => wins[x.winner] = (wins[x.winner]||0)+1);
+            document.getElementById("leaderboard").innerHTML = Object.entries(wins).sort((a,b)=>b[1]-a[1]).map(e=>`[${e[1]}] ${e[0]}`).join("<br>");
         });
 
         setInterval(() => {
             if(Object.keys(players)[0] === pId && gameState.active) {
-                if(Math.random() > 0.4) spawnB();
-                if(Math.random() > 0.7) dropFire();
+                if(Math.random() > 0.4) {
+                    let f = [1, 2, 3, 5, 6, 8][Math.floor(Math.random()*6)];
+                    barrels.push({x: f%2===0?10:430, y: 730-(f*70)-15, vx: f%2===0?3.5:-3.5});
+                    if(barrels.length > 12) barrels.shift();
+                    set(ref(db, `k/${room}/b`), barrels);
+                }
+                if(Math.random() > 0.8) {
+                    let tx = 225, ly = 750;
+                    Object.values(players).forEach(p => { if(p.y < ly) { ly = p.y; tx = p.x; }});
+                    fires.push({x: tx, y: ly, t: Date.now()+2000});
+                    set(ref(db, `k/${room}/f`), fires);
+                }
             }
         }, 1200);
-
         loop();
     };
 
-    function spawnB() {
-        let f = [1, 2, 3, 5, 6, 8][Math.floor(Math.random() * 6)];
-        barrels.push({ x: f%2===0?10:430, y: 730-(f*70)-15, vx: f%2===0?3.5:-3.5 });
-        if(barrels.length > 15) barrels.shift();
-        set(ref(db, `k/${room}/b`), barrels);
-    }
-
-    function dropFire() {
-        let tx = 225, ly = 750;
-        Object.values(players).forEach(p => { if(p.y < ly) { ly = p.y; tx = p.x; }});
-        fires.push({ x: tx, y: ly, t: Date.now() + 2000 });
-        set(ref(db, `k/${room}/f`), fires);
-        setTimeout(() => {
-            fires = fires.filter(fi => fi.t > Date.now());
-            set(ref(db, `k/${room}/f`), fires);
-        }, 2100);
-    }
-
-    window.restartGame = () => {
-        set(ref(db, `k/${room}/state`), { active: true });
-        set(ref(db, `k/${room}/b`), []);
-        set(ref(db, `k/${room}/f`), []);
-        reset();
-    };
-
+    window.onkeydown = e => keys[e.code] = true;
+    window.onkeyup = e => keys[e.code] = false;
     document.getElementById("chatInput").onkeydown = e => {
         if(e.key === "Enter" && e.target.value) {
             push(ref(db, `k/${room}/chat`), { user: pName, msg: e.target.value });
@@ -163,30 +120,22 @@
         }
     };
 
-    window.onkeydown = e => keys[e.code] = true;
-    window.onkeyup = e => keys[e.code] = false;
-    function reset() { me.x = 20; me.y = 710; me.vy = 0; }
-
     function update() {
         if(!gameState.active) return;
         me.onL = false;
-        lads.forEach(l => { if(me.x + 10 > l.x && me.x < l.x + 20 && me.y + 15 > l.y && me.y < l.y + l.h) me.onL = true; });
-
+        lads.forEach(l => { if(me.x+10 > l.x && me.x < l.x+20 && me.y+15 > l.y && me.y < l.y+l.h) me.onL = true; });
         if(me.onL && keys['KeyS']) { me.y -= 3; me.vy = 0; }
         else {
-            if(keys['KeyA']) me.x -= 2.8;
-            if(keys['KeyD']) me.x += 2.8;
+            if(keys['KeyA']) me.x -= 2.8; if(keys['KeyD']) me.x += 2.8;
             if(keys['KeyW'] && me.vy === 0) me.vy = -8;
             me.vy += 0.45; me.y += me.vy;
         }
-
         plats.forEach(p => { if(me.x+10 > p.x && me.x < p.x+p.w && me.y+15 > p.y && me.y+15 < p.y+5 && me.vy >= 0) { me.y = p.y-15; me.vy = 0; }});
-        if(me.y > 750) reset();
-        barrels.forEach(b => { if(Math.hypot(me.x-b.x, me.y-b.y) < 15) reset(); });
-        fires.forEach(f => { if(Math.hypot(me.x-f.x, me.y-f.y) < 22) reset(); });
-
+        if(me.y > 750) { me.x=20; me.y=710; }
+        barrels.forEach(b => { if(Math.hypot(me.x-b.x, me.y-b.y) < 15) { me.x=20; me.y=710; }});
+        fires.forEach(f => { if(Math.hypot(me.x-f.x, me.y-f.y) < 22) { me.x=20; me.y=710; }});
         if(me.y < 50) {
-            let rd = (document.getElementById("historyLog").innerHTML.split("<br>").filter(x=>x).length + 1);
+            let rd = document.getElementById("historyLog").innerHTML.split("<br>").filter(x=>x).length + 1;
             set(ref(db, `k/${room}/state`), { active: false, winner: pName });
             push(ref(db, `k/${room}/history`), { round: rd, winner: pName });
         }
@@ -197,17 +146,12 @@
         ctx.clearRect(0,0,450,750);
         ctx.fillStyle = "#ccc"; plats.forEach(p => ctx.fillRect(p.x, p.y, p.w, 2));
         ctx.fillStyle = "#eee"; lads.forEach(l => ctx.fillRect(l.x, l.y, 20, l.h));
-        
-        // Sector Bosses & Hazards
-        ctx.fillStyle = "#fdd"; [1, 2, 3, 5, 6, 8].forEach(f => ctx.fillRect(f%2===0?5:425, 730-(f*70)-20, 20, 20));
+        ctx.fillStyle = "#fdd"; [1,2,3,5,6,8].forEach(f => ctx.fillRect(f%2===0?5:425, 730-(f*70)-20, 20, 20));
         ctx.fillStyle = "#eef"; let tx = 225 + Math.sin(Date.now()/500)*150; ctx.fillRect(tx, 15, 35, 35);
         ctx.fillStyle = "orange"; barrels.forEach(b => { ctx.fillRect(b.x, b.y, 10, 10); b.x += b.vx; });
-        ctx.fillStyle = "red"; fires.forEach(f => { ctx.font = "bold 15px monospace"; ctx.fillText(". .. ...", f.x-15, f.y+5); });
-
-        // Players
+        ctx.fillStyle = "red"; fires.forEach(f => { if(f.t > Date.now()) ctx.fillText(". .. ...", f.x-15, f.y+5); });
         Object.keys(players).forEach(id => {
-            let p = players[id]; ctx.fillStyle = p.c;
-            ctx.fillRect(p.x, p.y, 12, 16);
+            let p = players[id]; ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, 12, 16);
             ctx.font = "8px monospace"; ctx.fillText(p.n, p.x-2, p.y-4);
         });
     }
