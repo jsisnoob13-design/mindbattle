@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Office Gauntlet — PvP (Merged Kong-style)</title>
+<title>Office Gauntlet — PvP</title>
 <style>
   :root{
     --bg: #eef2f7;
@@ -162,18 +162,18 @@
 
 <script type="module">
 /* ================================
-   Office Gauntlet — Merged Kong-style
-   Minimal targeted fixes:
-   - Floor draw/physics alignment fixed so players can stand on platforms
-   - Barrels spawn from top (floor 10) and cascade down when crossing edges
-   - Gap width increased for jumpability
-   - Keeps your multiplayer/firebase structure
+   Office Gauntlet — Single File
+   - Canvas game
+   - Realtime multiplayer via Firebase (RTDB)
+   - Host-authoritative hazard spawns (host writes spawn events; all simulate locally)
+   - Max 5 players; restart resets scores
+   - Chat implemented
    ================================= */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, push, onValue, off, update, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, set, push, onValue, off, update, remove, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-/* ---------- Firebase config (unchanged) ---------- */
+/* ---------- Firebase config (use your existing project keys) ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
   authDomain: "mindbattle-f00a3.firebaseapp.com",
@@ -209,13 +209,13 @@ const PLAYER_W = 10, PLAYER_H = 12;
 const GRAVITY = 0.55;
 const MOVE_SPEED = 8.0;
 const JUMP_V = -10.0;
-const LADDER_X_OFFSET = 24; // ladder detection
+const LADDER_X_OFFSET = 24; // ladder small x offset for detection
 const MAX_PLAYERS = 5;
-const HAZARD_SPAWN_INTERVAL = 1500; // ms — barrel spawn interval
+const HAZARD_SPAWN_INTERVAL = 1500; // ms — barrels spawn interval (brutal)
 const FIRE_DROP_INTERVAL = 3000; // ms (fire drop frequency)
-const BARREL_BASE_SPEED = 1.6; // base speed
-const BARREL_KICK_MULT = 1.8;
-const BARREL_KICK_MIN = 600; // ms
+const BARREL_BASE_SPEED = 1.6; // pixels per frame equivalent
+const BARREL_KICK_MULT = 1.8; // kick speed multiplier
+const BARREL_KICK_MIN = 600; // ms after spawn when kick can occur
 const BARREL_KICK_MAX = 1800;
 
 /* ---------- State ---------- */
@@ -227,42 +227,46 @@ let state = {
   playerColor: null,
   players: {},       // mirror
   scores: {},        // mirror scores
-  hazards: {},       // spawn list mirror
+  hazards: {},       // spawn list mirror (spawns only; local simulate)
   isHost: false,
   hostIntervalRefs: [],
   lastHazardSync: 0
 };
 
-/* ---------- Helpers ---------- */
+/* ---------- Helper functions ---------- */
 function randomId(){ return Math.random().toString(36).slice(2,10); }
 function clamp(v,a,b){ return Math.max(a,Math.min(b,b===undefined?v:b)); }
 function now(){ return Date.now(); }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 
 /* ---------- Map layout helpers ---------- */
-/* floorY returns the anchor y coordinate where a standing player's top should be (player.y) */
-function floorY(f){
+/* Floors are 1..10 (1 bottom) compute y for floor surface */
+function floorY(f){ // y coordinate of floor surface (top of floor line)
+  // each floor band height
   const band = CANVAS_H / FLOOR_COUNT;
-  // bottom floor (1) is near bottom; adjust so that floor surface is exactly at this y
-  // we want to draw floor at y (thin strip) and player top at y - PLAYER_H
-  return Math.round(CANVAS_H - band * (f - 1) - 2);
+  // bottom floor (1) is near bottom
+  return Math.round(CANVAS_H - band * (f - 1) - 2); // small offset
 }
 
-/* Ladder side: odd floors ladder on right, even floors left (floor1 ladder right) */
-function ladderSide(f){ return (f % 2 === 1) ? 'right' : 'left'; }
+/* Ladder side: odd floors ladder on right, even floors left (as spec: floor1 ladder right) */
+function ladderSide(f){
+  return (f % 2 === 1) ? 'right' : 'left';
+}
 
-/* Ladder x coordinate for a floor (moved slightly away from wall so not too near) */
+/* Ladder x coordinate for a floor */
 function ladderX(f){
-  const padding = 36; // moved a bit from edge
+  const padding = 18;
   if(ladderSide(f) === 'right') return CANVAS_W - padding;
   return padding;
 }
 
-/* Broken floors gaps: floor 4 and 7 have a central gap — increased width so jumpable */
-function floorHasGap(f){ return f === 4 || f === 7; }
+/* Broken floors gaps: floor 4 and 7 have a central gap */
+function floorHasGap(f){
+  return f === 4 || f === 7;
+}
 function floorGapRange(f){
   if(!floorHasGap(f)) return null;
-  const gapW = 60; // increased (times two as requested)
+  const gapW = 5;
   const cx = CANVAS_W / 2;
   return [cx - gapW/2, cx + gapW/2];
 }
@@ -395,6 +399,7 @@ async function leaveRoom(){
 /* ---------- Host claim (atomic-ish) ---------- */
 async function claimHostIfNone(room){
   const meta = metaRef(room);
+  // try to set host if not exists using transaction-like runTransaction on meta/host
   try{
     await runTransaction(meta, cur => {
       if(!cur) cur = {};
@@ -409,21 +414,23 @@ async function claimHostIfNone(room){
   }
 }
 
-/* ---------- Host tasks: spawn events (Kong-style spawn from top) ---------- */
+/* ---------- Host tasks: spawn events ---------- */
 let hostSpawnTimer = null;
 let hostFireTimer = null;
 
 function startHostTasks(){
   if(!state.room) return;
   state.isHost = true;
-  // spawn barrels periodically (from top floor)
+  // spawn barrels periodically
   if(hostSpawnTimer) clearInterval(hostSpawnTimer);
   hostSpawnTimer = setInterval(()=> {
-    spawnBarrelEvent(); // top spawn
+    spawnBarrelEvent();
   }, HAZARD_SPAWN_INTERVAL);
   // spawn fire periodically
   if(hostFireTimer) clearInterval(hostFireTimer);
-  hostFireTimer = setInterval(()=>{ spawnFireEvent(); }, FIRE_DROP_INTERVAL);
+  hostFireTimer = setInterval(()=>{
+    spawnFireEvent();
+  }, FIRE_DROP_INTERVAL);
 }
 
 function stopHostTasks(){
@@ -431,28 +438,25 @@ function stopHostTasks(){
   if(hostFireTimer) { clearInterval(hostFireTimer); hostFireTimer = null; }
 }
 
-/* Spawn event format written by host:
-   { id, type:'barrel'|'fire', floor, startX, startY, dir:'left'|'right' , speed, kickAt, createdAt }
-   Clients simulate deterministically using createdAt.
+/* Spawn event format:
+   { id, type:'barrel'|'fire', floor, startX, startY, dir:'left'|'right' , speed, kickAt (ms offset), createdAt }
+   Host writes spawn object to rooms/{room}/spawns/{id} = spawnObj
+   Clients read spawns and simulate locally using createdAt timestamp.
 */
-
-/* Kong-style: spawn from top floor */
 async function spawnBarrelEvent(){
   if(!state.room) return;
-  const floor = FLOOR_COUNT; // spawn from the top (floor 10)
+  const floor = chooseRandomFloorForBarrel();
+  // spawn from left or right randomly
   const dir = (Math.random() < 0.5) ? 'left' : 'right';
-  // Start near the top platform center (slightly offset so it rolls)
-  const startX = (dir === 'left') ? 28 : (CANVAS_W - 28);
-  const startY = floorY(floor) - 2;
+  const startX = (dir === 'left') ? 0 : CANVAS_W;
+  const startY = floorY(floor) - 2; // slightly above surface
   const id = 'b_' + randomId();
   const baseSpeed = BARREL_BASE_SPEED + Math.random()*0.5;
-  // host chooses kickAt for occasional speed bursts
   const kickAt = BARREL_KICK_MIN + Math.floor(Math.random()*(BARREL_KICK_MAX-BARREL_KICK_MIN));
   const spawn = { id, type:'barrel', floor, startX, startY, dir, speed: baseSpeed, kickAt, createdAt: now() };
   await push(spawnsRef(state.room), spawn);
 }
 
-/* Spawn fire targeting leader (kept same) */
 async function spawnFireEvent(){
   if(!state.room) return;
   // target the leading player (highest floor or lowest y)
@@ -461,7 +465,8 @@ async function spawnFireEvent(){
   let leader = null;
   Object.values(playersObj).forEach(p => {
     if(!leader) leader = p;
-    if((p.floor || 1) > (leader.floor || 1) || ((p.floor || 1) === (leader.floor || 1) && (p.y || 9999) < (leader.y || 9999))) leader = p;
+    // ranking: smaller y means higher on canvas (closer to top), but floor property more reliable
+    if((p.floor || 1) > (leader.floor || 1) || ((p.floor || 1) === (leader.floor || 1) && p.y < leader.y)) leader = p;
   });
   const targetX = leader ? (leader.x || CANVAS_W/2) : (CANVAS_W/2);
   const id = 'f_' + randomId();
@@ -469,8 +474,12 @@ async function spawnFireEvent(){
   await push(spawnsRef(state.room), spawn);
 }
 
-/* choose random floor excluding top (unused for kong top-spawn mode) */
-function chooseRandomFloorForBarrel(){ const f = Math.floor(1 + Math.random()*9); return f; }
+/* choose random floor excluding top (since barrels roll on floors where players are) */
+function chooseRandomFloorForBarrel(){
+  // prefer lower-middle floors to keep challenge; choose 1..9 (not 10)
+  const f = Math.floor(1 + Math.random()*9);
+  return f;
+}
 
 /* ---------- Listening to room changes ---------- */
 let unsubPlayers = null, unsubSpawns = null, unsubChat = null, unsubScores = null, unsubMeta = null;
@@ -485,6 +494,7 @@ function listenRoom(room){
     countLabel.textContent = Object.keys(val).length;
     // If a host left, re-claim if we can
     if(!state.isHost){
+      // check meta.host
       onValue(metaRef(room), ms => {
         const metaVal = ms.val() || {};
         if(!metaVal.host){ claimHostIfNone(room); }
@@ -492,11 +502,12 @@ function listenRoom(room){
     }
   });
 
-  // spawns
+  // spawns: when new spawn pushed, add to local hazards map
   const sRef = spawnsRef(room);
   unsubSpawns = onValue(sRef, snap => {
     const val = snap.val() || {};
     state.hazards = val;
+    // keep local mirror only; hazards simulated by all clients based on spawn createdAt
   });
 
   // chat
@@ -512,13 +523,15 @@ function listenRoom(room){
     renderScoreboard();
   });
 
-  // meta
+  // meta: who is host, etc
   unsubMeta = onValue(metaRef(room), snap => {
     const m = snap.val() || {};
+    // if host is someone else and local thought was host -> if meta.host changed away from us, stop tasks
     if(m.host !== localId && state.isHost){
       state.isHost = false;
       stopHostTasks();
     }
+    // if host is us and we weren't host -> start
     if(m.host === localId && !state.isHost){
       state.isHost = true;
       startHostTasks();
@@ -550,14 +563,17 @@ async function sendChat(){
 
 /* ---------- Scoreboard ---------- */
 function renderScoreboard(){
+  // combine players + scores so spectator names included
   const players = state.players || {};
   const scores = state.scores || {};
   const rows = Object.keys(players).map(id => {
     return { id, name: players[id].name || 'Player', score: (scores[id] && scores[id].score) ? scores[id].score : 0 };
   });
+  // also ensure any score entries without a player (rare) show
   Object.keys(scores || {}).forEach(id => {
     if(!rows.find(r => r.id === id)) rows.push({ id, name: (scores[id].name || 'Player'), score: scores[id].score || 0 });
   });
+  // sort desc
   rows.sort((a,b) => (b.score - a.score) || a.name.localeCompare(b.name));
   scoreboardEl.innerHTML = rows.map(r => `<div class="row"><div>${escapeHtml(r.name)}</div><div>${r.score}</div></div>`).join('');
 }
@@ -581,6 +597,7 @@ function renderChat(data){
 
 /* ---------- Score update after win ---------- */
 async function awardScore(room, playerId, playerName){
+  // increment rooms/{room}/scores/{playerId} atomically via transaction-like pattern
   const scRef = scoresRef(room);
   const snap = await new Promise(res => onValue(scRef, s => res(s), {onlyOnce:true}));
   const all = snap.val() || {};
@@ -594,8 +611,11 @@ async function awardScore(room, playerId, playerName){
 async function resetScoresAndMap(){
   if(!state.room) return;
   if(!confirm('Reset all scores and restart map?')) return;
+  // clear scores node
   await set(scoresRef(state.room), {});
+  // clear spawns (to stop old hazards)
   await set(spawnsRef(state.room), null);
+  // respawn players server-side: set players positions to start
   const playersSnap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
   const playersObj = playersSnap.val() || {};
   const updates = {};
@@ -607,54 +627,46 @@ async function resetScoresAndMap(){
     updates[`rooms/${state.room}/players/${id}/floor`] = 1;
   });
   if(Object.keys(updates).length) await update(ref(db), updates);
+  // remove spawns so new round is clean
   await set(spawnsRef(state.room), null);
+  // local clear
   state.hazards = {};
   renderScoreboard();
 }
 
-/* ---------- Hazard simulation (Kong-style barrel cascade) ---------- */
-/* simulateHazardPosition now supports barrel cascading down floors when crossing edges */
+/* ---------- Local simulation of hazards from spawn data ---------- */
+/* Each spawn object contains createdAt - all clients run same simulation from this base.
+   For barrels: they move horizontally across their floor, fall at edges to next floor and continue.
+   For fire: falls vertically from startY to bottom.
+*/
+
+/* compute hazard position at time t (ms) since spawn */
 function simulateHazardPosition(spawn, t){
   if(!spawn) return null;
   if(spawn.type === 'barrel'){
-    // t in ms
+    // t in ms -> convert to frames approximation (frame ~16ms)
+    // compute distance = baseSpeed * (t / 16)
     const basePxPerFrame = spawn.speed || BARREL_BASE_SPEED;
+    // initial direction
+    const dirSign = spawn.dir === 'left' ? 1 : -1; // spawn from left will go right (dir 'left' means spawn side left, will move toward right)
+    // Actually define: if spawn.dir === 'left', start at x=0 and move right (+), else start at x=CANVAS_W and move left (-)
+    const dir = spawn.dir === 'left' ? 1 : -1;
+    // base speed pixels per second approximate: convert speed to px/sec: basePxPerFrame * 60
     const pxPerSec = basePxPerFrame * 60;
-    const dir = spawn.dir === 'left' ? 1 : -1; // left -> move right (+)
-    // initial position
     let x = spawn.startX + dir * (pxPerSec * (t / 1000));
-    let floor = spawn.floor;
-    // If barrel crosses canvas edge, it falls to the next floor and continues traveling.
-    // We'll model "wrapping" to how much it went past the edge, and each crossing reduces floor by 1.
-    // Keep looping until x is inside canvas or floor < 1
-    while(true){
-      if(x > CANVAS_W){
-        // moved off right edge: compute overrun and move to next lower floor starting from right edge
-        const over = x - CANVAS_W;
-        floor = floor - 1;
-        x = CANVAS_W - over; // continue movement from right edge going leftwards a bit
-        // invert direction when falling? keep same dir so it continues off-screen effect.
-        // To keep it simple, keep the same sign but position corrected.
-      } else if(x < 0){
-        const over = -x;
-        floor = floor - 1;
-        x = 0 + over;
-      } else {
-        break;
-      }
-      // if floor below 1, remove (off map)
-      if(floor < 1) return null;
+    // simulate floor drops: when x crosses edge, it falls to next floor immediately (we simulate vertical step when reaching edge)
+    // We model simple: barrel moves in straight line horizontally on its spawn floor until it goes off-screen; when off-screen it disappears.
+    // For more realism, let it fall down when encountering ladder/gap? Keep simple: barrel continues off-canvas.
+    // handle kick: if t >= kickAt then multiply distance by kick multiplier
+    if(spawn.kickAt && t >= spawn.kickAt) {
+      const extra = (BARREL_KICK_MULT - 1) * pxPerSec * ((t - spawn.kickAt) / 1000);
+      x = spawn.startX + dir * (pxPerSec * (t / 1000) + extra);
     }
-    // handle kick phase (speed burst) — approximate by extending distance after kick
-    if(spawn.kickAt && t >= spawn.kickAt){
-      const pk = (t - spawn.kickAt) / 1000;
-      x += dir * pxPerSec * (BARREL_KICK_MULT - 1) * pk;
-    }
-    const y = floorY(floor) - 2;
-    return { x, y, floor, id: spawn.id, type:'barrel' };
+    const y = floorY(spawn.floor) - 2; // stays on its floor surface
+    return { x, y, floor: spawn.floor, id: spawn.id, type:'barrel' };
   } else if(spawn.type === 'fire'){
     const speed = spawn.speed || 2.8;
-    const y = spawn.startY + speed * (t / 16); // px per approx frame
+    const y = spawn.startY + speed * (t / 16); // px per frame approx
     const x = spawn.startX;
     return { x, y, id: spawn.id, type:'fire' };
   }
@@ -702,13 +714,13 @@ function stepLocal(dt, tNow){
   // ladder detection
   const currentFloor = p.floor;
   const ladderXCoord = ladderX(currentFloor);
-  const nearLadder = Math.abs((p.x + p.width/2) - ladderXCoord) < LADDER_X_OFFSET;
+  const nearLadder = Math.abs(p.x - ladderXCoord) < LADDER_X_OFFSET;
   // climbing
   if(keys.climb && nearLadder){
     p.onLadder = true;
     p.vx = 0;
     p.vy = 0;
-    // climb up slowly (dt scaled)
+    // climb up slowly
     p.y -= 3.0 * dt;
     // if near next floor top, snap floor
     const nextFloorTopY = floorY(currentFloor + 1) - PLAYER_H;
@@ -742,14 +754,13 @@ function stepLocal(dt, tNow){
   if(p.x < 0) p.x = 0;
   if(p.x > CANVAS_W - p.width) p.x = CANVAS_W - p.width;
 
-  // ground collision: robust snap (check gap before snapping)
+  // ground collision: if below current floor surface, snap to floor
   const surfaceY = floorY(p.floor) - PLAYER_H;
-  const EPS = 0.9;
   if(!p.onLadder){
-    if(p.y >= surfaceY - EPS){
-      // check gap BEFORE snapping
+    if(p.y >= surfaceY){
+      // check if floor has gap and player is within gap -> fall through
       if(floorHasGap(p.floor) && !isOnPlatformX(p.floor, p.x + p.width/2)){
-        // fall through -> die
+        // immediately die (fall)
         handleDeath(localId, 'fall');
         return;
       } else {
@@ -762,28 +773,34 @@ function stepLocal(dt, tNow){
     }
   }
 
-  // player collisions
+  // player collisions: block moving into other players
   Object.keys(state.players || {}).forEach(id => {
     if(id === localId) return;
     const other = state.players[id];
     if(!other) return;
+    // approximate other bbox
     const ob = { x: other.x || 0, y: other.y || 0, w: PLAYER_W, h: PLAYER_H };
     const pb = { x: p.x, y: p.y, w: p.width, h: p.height };
     if(rectsOverlap(pb, ob)){
+      // simple pushback: if moving right and collision from right side, move left a bit
       if(p.vx > 0) p.x = ob.x - p.width - 1;
       if(p.vx < 0) p.x = ob.x + ob.w + 1;
     }
   });
 
-  // hazard collisions
+  // hazard collisions: check local player vs simulated hazards
   checkHazardCollisions(tNow);
 
   // reached top?
   if(p.floor >= FLOOR_COUNT){
+    // win!
     onWin(localId, localPlayer.name);
+    // award score server-side
     awardScore(state.room, localId, localPlayer.name);
+    // reset round: clear spawns and respawn everyone (host does)
     if(state.isHost) {
       set(spawnsRef(state.room), null);
+      // respawn players server side
       respawnAllPlayersToStart();
     }
   }
@@ -803,7 +820,7 @@ function stepLocal(dt, tNow){
   }
 }
 
-/* Respawn all players to start (host) */
+/* Respawn all players to start (server-like action by host) */
 async function respawnAllPlayersToStart(){
   if(!state.room) return;
   const snap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
@@ -821,8 +838,10 @@ async function respawnAllPlayersToStart(){
 
 /* Handle local death (notify server by resetting our position) */
 async function handleDeath(playerId, cause){
+  // local respawn
   if(playerId === localId){
     localPlayer.respawn();
+    // notify db
     if(state.room) {
       await update(ref(db), {
         [`rooms/${state.room}/players/${localId}/x`]: localPlayer.x,
@@ -832,6 +851,8 @@ async function handleDeath(playerId, cause){
         [`rooms/${state.room}/players/${localId}/floor`]: 1
       }).catch(e=>console.warn(e));
     }
+  } else {
+    // remote player died - the host or remote will update positions in DB
   }
 }
 
@@ -846,7 +867,7 @@ function checkHazardCollisions(tNow){
     const pos = simulateHazardPosition(spawn, tms);
     if(!pos) continue;
     if(pos.type === 'barrel'){
-      const hb = { x: pos.x-8, y: pos.y-6, w: 16, h: 12 }; // barrel bbox
+      const hb = { x: pos.x, y: pos.y, w: 16, h: 14 }; // barrel bbox
       const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
       if(rectsOverlap(hb, pb)){
         handleDeath(localId, 'barrel');
@@ -865,6 +886,7 @@ function checkHazardCollisions(tNow){
 
 /* When someone wins */
 function onWin(id,name){
+  // show modal briefly
   showModal(`${escapeHtml(name)} reached the top!`);
 }
 
@@ -873,32 +895,31 @@ function renderAll(tNow){
   // clear
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
 
-  // draw floors (fixed alignment so player stands correctly)
+  // draw floors
   for(let f=1; f<=FLOOR_COUNT; f++){
     const y = floorY(f);
     ctx.fillStyle = (floorHasGap(f) ? '#e6edf3' : '#dcebf8');
-    // draw floor strip at y (not y+PLAYER_H) — this fixes standing alignment
-    ctx.fillRect(0, y, CANVAS_W, 6);
+    ctx.fillRect(0, y+PLAYER_H, CANVAS_W, 6); // floor strip
     // gap if any
     if(floorHasGap(f)){
       const g = floorGapRange(f);
-      ctx.clearRect(g[0], y, g[1]-g[0], 6);
+      ctx.clearRect(g[0], y+PLAYER_H, g[1]-g[0], 6);
       // draw dashed edges
       ctx.strokeStyle = '#cbd7e6';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.setLineDash([4,4]);
-      ctx.moveTo(g[0], y);
-      ctx.lineTo(g[0], y - 8);
-      ctx.moveTo(g[1], y);
-      ctx.lineTo(g[1], y - 8);
+      ctx.moveTo(g[0], y+PLAYER_H);
+      ctx.lineTo(g[0], y+PLAYER_H - 8);
+      ctx.moveTo(g[1], y+PLAYER_H);
+      ctx.lineTo(g[1], y+PLAYER_H - 8);
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // ladder (positioned relative to floor y)
+    // ladder
     const lx = ladderX(f);
     ctx.fillStyle = '#bcd6f7';
-    ctx.fillRect(lx-6, y-80, 12, 80);
+    ctx.fillRect(lx-6, y-80+PLAYER_H, 12, 80);
     // ladder rungs
     ctx.strokeStyle = '#9fbfe6';
     for(let r=0;r<8;r++){
@@ -931,9 +952,8 @@ function renderAll(tNow){
   // update local player's DB-synced position if DB has any updates for local player
   if(players[localId]){
     const p = players[localId];
-    // gentle sync (prevent jitter)
-    if(typeof p.x === 'number' && Math.abs(p.x - localPlayer.x) > 50) localPlayer.x = p.x;
-    if(typeof p.y === 'number' && Math.abs(p.y - localPlayer.y) > 50) localPlayer.y = p.y;
+    localPlayer.x = p.x;
+    localPlayer.y = p.y;
     localPlayer.floor = p.floor || 1;
   }
   // draw each player
@@ -943,12 +963,20 @@ function renderAll(tNow){
     const x = p.x || CANVAS_W/2;
     const y = p.y || floorY(1) - PLAYER_H;
     const name = p.name || 'P';
-    if(id === localId) ctx.fillStyle = '#2b7cff'; else ctx.fillStyle = '#495a64';
+    // small rectangle
+    if(id === localId){
+      ctx.fillStyle = '#2b7cff';
+    } else {
+      ctx.fillStyle = '#495a64';
+    }
     ctx.fillRect(x, y, PLAYER_W, PLAYER_H);
+    // name
     ctx.fillStyle = '#14222b';
     ctx.font = '10px Inter, Arial';
     ctx.fillText(name, x - 6, y - 6);
   });
+
+  // overlays: scoreboard small top-left inside canvas (optional)
 }
 
 /* ---------- Utility modals ---------- */
@@ -969,15 +997,26 @@ async function ensurePlayerScoreNode(room){
 }
 
 /* ---------- Respawn helper for DB - called when host wants to respawn everyone ---------- */
-/* implemented above as respawnAllPlayersToStart */
+// already implemented as respawnAllPlayersToStart()
 
 /* ---------- Misc helpers ---------- */
-function renderPlayersListAndScoreboard(){ renderPlayersList(); renderScoreboard(); }
+function renderPlayersListAndScoreboard(){
+  renderPlayersList();
+  renderScoreboard();
+}
+
+/* ---------- On win event (notify clients) ---------- */
+function notifyAllWin(name){
+  showModal(`${escapeHtml(name)} reached the top!`, 2200);
+}
 
 /* ---------- Reconciliation: when DB players update, update local mirror ---------- */
 function onPlayersDBUpdate(val){
+  // val is players object
   state.players = val || {};
+  // if local player not present (maybe just joined) create
   if(state.players[localId]){
+    // sync localPlayer with DB
     const p = state.players[localId];
     localPlayer.x = p.x || localPlayer.x;
     localPlayer.y = p.y || localPlayer.y;
@@ -985,16 +1024,28 @@ function onPlayersDBUpdate(val){
   }
 }
 
+/* ---------- When spawns updated in DB: state.hazards will be updated via listener */
+
+// Listeners set in listenRoom with onValue handlers above
+
 /* ---------- Initial UI wiring ---------- */
 function setStatus(s){ statusLabel.textContent = s; }
 
-/* ---------- Initial small render ---------- */
+/* ---------- Final: attach DB listeners when joined ---------- */
+/* We set them in listenRoom invoked on join. */
+
+//
+// Start: attach a very small initial render for skeleton
+//
 (function init(){
+  // draw initial skeleton
   ctx.fillStyle = '#eef6ff';
   ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
   ctx.fillStyle = '#9fbfe6';
   ctx.fillRect(0, floorY(1), CANVAS_W, 6);
 })();
+
+/* ---------- END module ---------- */
 
 </script>
 </body>
