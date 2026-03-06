@@ -207,8 +207,8 @@ const FLOOR_COUNT = 10;
 const TILE_H = Math.floor(CANVAS_H / FLOOR_COUNT); // floor height
 const PLAYER_W = 10, PLAYER_H = 12;
 const GRAVITY = 0.55;
-const MOVE_SPEED = 3.0;
-const JUMP_V = -8.2;
+const MOVE_SPEED = 5.0;
+const JUMP_V = -10.0;
 const LADDER_X_OFFSET = 24; // ladder small x offset for detection
 const MAX_PLAYERS = 5;
 const HAZARD_SPAWN_INTERVAL = 1500; // ms — barrels spawn interval (brutal)
@@ -449,7 +449,7 @@ async function spawnBarrelEvent(){
   // spawn from left or right randomly
   const dir = (Math.random() < 0.5) ? 'left' : 'right';
   const startX = (dir === 'left') ? 0 : CANVAS_W;
-  const startY = floorY(floor) - 8; // slightly above surface
+  const startY = floorY(floor) - 2; // slightly above surface
   const id = 'b_' + randomId();
   const baseSpeed = BARREL_BASE_SPEED + Math.random()*0.5;
   const kickAt = BARREL_KICK_MIN + Math.floor(Math.random()*(BARREL_KICK_MAX-BARREL_KICK_MIN));
