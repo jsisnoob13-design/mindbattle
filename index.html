@@ -721,7 +721,7 @@ function stepLocal(dt, tNow){
     p.vx = 0;
     p.vy = 0;
     // climb up slowly
-    p.y -= 1.6 * dt;
+    p.y -= 3.0 * dt;
     // if near next floor top, snap floor
     const nextFloorTopY = floorY(currentFloor + 1) - PLAYER_H;
     if(p.y <= nextFloorTopY){
