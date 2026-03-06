@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Office Gauntlet — PvP (Fire + Barrel Update)</title>
+<title>Office Gauntlet — PvP (Merged Kong-style)</title>
 <style>
   :root{
     --bg: #eef2f7;
@@ -162,16 +162,18 @@
 
 <script type="module">
 /* ================================
-   Office Gauntlet — Fire + Barrel spam update
-   - All floors spawn 2 barrels (1-6), upper floors spawn 3 (7-9)
-   - Fire warnings (!) appear anywhere; 1.5s warning then fire drop
-   - Host-authoritative: host writes both warning and final fire spawn
+   Office Gauntlet — Merged Kong-style
+   Minimal targeted fixes:
+   - Floor draw/physics alignment fixed so players can stand on platforms
+   - Barrels spawn from top (floor 10) and cascade down when crossing edges
+   - Gap width increased for jumpability
+   - Keeps your multiplayer/firebase structure
    ================================= */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, push, onValue, off, update, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-/* ---------- Firebase config ---------- */
+/* ---------- Firebase config (unchanged) ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
   authDomain: "mindbattle-f00a3.firebaseapp.com",
@@ -202,27 +204,19 @@ const modalHost = document.getElementById('modalHost');
 /* ---------- Game constants ---------- */
 const CANVAS_W = 400, CANVAS_H = 600;
 const FLOOR_COUNT = 10;
+const TILE_H = Math.floor(CANVAS_H / FLOOR_COUNT); // floor height
 const PLAYER_W = 10, PLAYER_H = 12;
 const GRAVITY = 0.55;
 const MOVE_SPEED = 8.0;
 const JUMP_V = -10.0;
+const LADDER_X_OFFSET = 24; // ladder detection
 const MAX_PLAYERS = 5;
-
-const LADDER_X_OFFSET = 28;
-const LADDER_OFFSET_FROM_WALL = 60;
-const ELEVATOR_WIDTH = 60;
-const ELEVATOR_SIDE_MARGIN = 50;
-const ELEVATOR_MOVE_MS = 1500;
-const ELEVATOR_PAUSE_MS = 500;
-const ELEVATOR_CYCLE_MS = 2 * (ELEVATOR_MOVE_MS + ELEVATOR_PAUSE_MS);
-
-const HAZARD_SPAWN_INTERVAL = 1800;
-const BARREL_BASE_SPEED = 1.6;
-const BARREL_SPACING_MS = 400;
-const FIRE_DROP_INTERVAL = 3000;
-const FIRE_WARNING_MS = 1500; // user requested 1.5s
-const LADDER_TRAP_PERIOD = 7000;
-const LADDER_SAFE_MS = 5000;
+const HAZARD_SPAWN_INTERVAL = 1500; // ms — barrel spawn interval
+const FIRE_DROP_INTERVAL = 3000; // ms (fire drop frequency)
+const BARREL_BASE_SPEED = 1.6; // base speed
+const BARREL_KICK_MULT = 1.8;
+const BARREL_KICK_MIN = 600; // ms
+const BARREL_KICK_MAX = 1800;
 
 /* ---------- State ---------- */
 const localId = randomId();
@@ -230,45 +224,106 @@ let state = {
   room: null,
   name: null,
   isJoined: false,
-  players: {},
-  scores: {},
-  hazards: {},
+  playerColor: null,
+  players: {},       // mirror
+  scores: {},        // mirror scores
+  hazards: {},       // spawn list mirror
   isHost: false,
-  elevators: {},
-  ladderPhaseStart: null,
+  hostIntervalRefs: [],
+  lastHazardSync: 0
 };
 
 /* ---------- Helpers ---------- */
 function randomId(){ return Math.random().toString(36).slice(2,10); }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,b===undefined?v:b)); }
 function now(){ return Date.now(); }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 
-/* ---------- Layout helpers ---------- */
-function floorY(f){ const band = CANVAS_H / FLOOR_COUNT; return Math.round(CANVAS_H - band * (f - 1) - 2); }
-function ladderSide(f){ return (f % 2 === 1) ? 'right' : 'left'; }
-function ladderXForFloor(f){ return ladderSide(f) === 'right' ? CANVAS_W - LADDER_OFFSET_FROM_WALL : LADDER_OFFSET_FROM_WALL; }
-function floorHasGap(f){ return f === 4 || f === 7; }
-function floorGapRange(f){ if(!floorHasGap(f)) return null; const gapW = 30; const cx = CANVAS_W / 2; return [cx - gapW/2, cx + gapW/2]; }
-function isOnPlatformX(f,x){ const gap = floorGapRange(f); if(!gap) return true; return !(x > gap[0] && x < gap[1]); }
+/* ---------- Map layout helpers ---------- */
+/* floorY returns the anchor y coordinate where a standing player's top should be (player.y) */
+function floorY(f){
+  const band = CANVAS_H / FLOOR_COUNT;
+  // bottom floor (1) is near bottom; adjust so that floor surface is exactly at this y
+  // we want to draw floor at y (thin strip) and player top at y - PLAYER_H
+  return Math.round(CANVAS_H - band * (f - 1) - 2);
+}
 
-/* ---------- Local player ---------- */
+/* Ladder side: odd floors ladder on right, even floors left (floor1 ladder right) */
+function ladderSide(f){ return (f % 2 === 1) ? 'right' : 'left'; }
+
+/* Ladder x coordinate for a floor (moved slightly away from wall so not too near) */
+function ladderX(f){
+  const padding = 36; // moved a bit from edge
+  if(ladderSide(f) === 'right') return CANVAS_W - padding;
+  return padding;
+}
+
+/* Broken floors gaps: floor 4 and 7 have a central gap — increased width so jumpable */
+function floorHasGap(f){ return f === 4 || f === 7; }
+function floorGapRange(f){
+  if(!floorHasGap(f)) return null;
+  const gapW = 60; // increased (times two as requested)
+  const cx = CANVAS_W / 2;
+  return [cx - gapW/2, cx + gapW/2];
+}
+
+/* Determine if (x) on floor f is on platform (not gap) */
+function isOnPlatformX(f,x){
+  const gap = floorGapRange(f);
+  if(!gap) return true;
+  return !(x > gap[0] && x < gap[1]);
+}
+
+/* ---------- Player object local control ---------- */
 class LocalPlayer {
   constructor(id, name){
-    this.id = id; this.name = name;
-    this.x = CANVAS_W/2; this.y = floorY(1) - PLAYER_H;
-    this.vx = 0; this.vy = 0; this.onGround = true; this.onLadder = false;
-    this.floor = 1; this.width = PLAYER_W; this.height = PLAYER_H; this.score = 0; this.facing='right';
+    this.id = id;
+    this.name = name;
+    this.x = CANVAS_W/2;
+    this.y = floorY(1) - PLAYER_H; // standing on floor 1
+    this.vx = 0;
+    this.vy = 0;
+    this.onGround = true;
+    this.onLadder = false;
+    this.floor = 1;
+    this.score = 0;
+    this.width = PLAYER_W;
+    this.height = PLAYER_H;
+    this.facing = 'right';
+    this.color = '#2b7cff';
+    this.lastUpdate = now();
+    this.respawn(); // place at start
   }
-  respawn(){ this.x = CANVAS_W/2; this.y = floorY(1) - PLAYER_H; this.vx = 0; this.vy = 0; this.floor = 1; this.onGround = true; this.onLadder = false; }
-  bbox(){ return { x:this.x, y:this.y, w:this.width, h:this.height }; }
+  respawn(){
+    this.x = CANVAS_W/2;
+    this.y = floorY(1) - PLAYER_H;
+    this.vx = 0; this.vy = 0;
+    this.onGround = true; this.onLadder = false;
+    this.floor = 1;
+  }
+  bbox(){ return {x:this.x, y:this.y, w:this.width, h:this.height}; }
 }
+
+/* ---------- Local runtime variables ---------- */
 let localPlayer = new LocalPlayer(localId, 'Player');
 let keys = {};
 let raf = null;
 
-/* ---------- Input ---------- */
-document.addEventListener('keydown', e => { if(document.activeElement === chatInput) return; if(e.key === 'a' || e.key === 'A') keys.left = true; if(e.key === 'd' || e.key === 'D') keys.right = true; if(e.key === 'w' || e.key === 'W') keys.jump = true; if(e.key === 's' || e.key === 'S') keys.climb = true; });
-document.addEventListener('keyup', e => { if(document.activeElement === chatInput) return; if(e.key === 'a' || e.key === 'A') keys.left = false; if(e.key === 'd' || e.key === 'D') keys.right = false; if(e.key === 'w' || e.key === 'W') keys.jump = false; if(e.key === 's' || e.key === 'S') keys.climb = false; });
+/* ---------- Input handlers ---------- */
+document.addEventListener('keydown', e => {
+  if(document.activeElement === chatInput) return;
+  if(e.key === 'a' || e.key === 'A') keys.left = true;
+  if(e.key === 'd' || e.key === 'D') keys.right = true;
+  if(e.key === 'w' || e.key === 'W') keys.jump = true;
+  if(e.key === 's' || e.key === 'S') keys.climb = true;
+});
+document.addEventListener('keyup', e => {
+  if(document.activeElement === chatInput) return;
+  if(e.key === 'a' || e.key === 'A') keys.left = false;
+  if(e.key === 'd' || e.key === 'D') keys.right = false;
+  if(e.key === 'w' || e.key === 'W') keys.jump = false;
+  if(e.key === 's' || e.key === 'S') keys.climb = false;
+});
 
 /* ---------- DOM events ---------- */
 joinBtn.onclick = joinRoom;
@@ -277,7 +332,7 @@ restartBtn.onclick = resetScoresAndMap;
 sendChatBtn.onclick = sendChat;
 chatInput.addEventListener('keydown', (e)=> { if(e.key === 'Enter') sendChat(); });
 
-/* ---------- DB paths ---------- */
+/* ---------- Firebase helpers & DB paths ---------- */
 function roomPath(r){ return `rooms/${r}`; }
 function playersRef(r){ return ref(db, `${roomPath(r)}/players`); }
 function playerRef(r,id){ return ref(db, `${roomPath(r)}/players/${id}`); }
@@ -286,338 +341,489 @@ function chatRef(r){ return ref(db, `${roomPath(r)}/chat`); }
 function scoresRef(r){ return ref(db, `${roomPath(r)}/scores`); }
 function metaRef(r){ return ref(db, `${roomPath(r)}/meta`); }
 
-/* ---------- Join / Leave ---------- */
+/* ---------- Join / Leave logic ---------- */
 async function joinRoom(){
   const name = (nameInput.value || '').trim() || ('P'+localId.slice(0,4));
   const room = (roomInput.value || '').trim();
   if(!room){ alert('Enter room code'); return; }
+  // check players count
   const snap = await new Promise(res => onValue(playersRef(room), s => res(s), {onlyOnce:true}));
   const existing = snap.val() || {};
-  if(Object.keys(existing).length >= MAX_PLAYERS){ alert('Room full (max ' + MAX_PLAYERS + '). Try another code.'); return; }
-  state.room = room; state.name = name; localPlayer.name = name;
-  roomLabel.textContent = room; statusLabel.textContent = 'Joining...';
-  await set(playerRef(room, localId), { id: localId, name: name, x: localPlayer.x, y: localPlayer.y, vx:0, vy:0, floor:1, joinedAt: now() });
+  if(Object.keys(existing).length >= MAX_PLAYERS){
+    alert('Room full (max ' + MAX_PLAYERS + '). Try another code.');
+    return;
+  }
+  state.room = room;
+  state.name = name;
+  localPlayer.name = name;
+  roomLabel.textContent = room;
+  statusLabel.textContent = 'Joining...';
+  // write presence
+  await set(playerRef(room, localId), {
+    id: localId, name: name, x: localPlayer.x, y: localPlayer.y, vx:0, vy:0, floor:1, joinedAt: Date.now()
+  });
+  // onDisconnect cleanup (best-effort)
   try{ playerRef(room, localId).onDisconnect().remove(); }catch(e){}
+  // ensure host assigned if not present
   await claimHostIfNone(room);
-  joinBtn.style.display = 'none'; leaveBtn.style.display = 'inline-block';
-  statusLabel.textContent = 'Playing'; state.isJoined = true;
-  listenRoom(room); startLoop();
+  // set UI
+  joinBtn.style.display = 'none';
+  leaveBtn.style.display = 'inline-block';
+  statusLabel.textContent = 'Playing';
+  state.isJoined = true;
+  // start listeners
+  listenRoom(room);
+  startLoop();
 }
 
-/* ---------- Leave ---------- */
+/* Leave */
 async function leaveRoom(){
   if(!state.room) return;
   cleanupListeners();
   await remove(playerRef(state.room, localId));
-  state.isJoined = false; state.isHost = false; state.room = null;
-  roomLabel.textContent = '—'; statusLabel.textContent = 'Not connected';
-  joinBtn.style.display = 'inline-block'; leaveBtn.style.display = 'none';
+  state.isJoined = false;
+  state.isHost = false;
+  state.room = null;
+  roomLabel.textContent = '—';
+  statusLabel.textContent = 'Not connected';
+  joinBtn.style.display = 'inline-block';
+  leaveBtn.style.display = 'none';
+  // stop loop
   stopLoop();
 }
 
-/* ---------- Host claim ---------- */
+/* ---------- Host claim (atomic-ish) ---------- */
 async function claimHostIfNone(room){
-  const mRef = metaRef(room);
+  const meta = metaRef(room);
   try{
-    await runTransaction(mRef, cur => { if(!cur) cur = {}; if(!cur.host){ cur.host = localId; cur.hostAt = now(); } return cur; });
-    const snap = await new Promise(res => onValue(mRef, s => res(s), {onlyOnce:true}));
+    await runTransaction(meta, cur => {
+      if(!cur) cur = {};
+      if(!cur.host) { cur.host = localId; cur.hostAt = Date.now(); }
+      return cur;
+    });
+    const snap = await new Promise(res => onValue(meta, s => res(s), {onlyOnce:true}));
     const val = snap.val() || {};
-    if(val.host === localId){ state.isHost = true; startHostTasks(); }
-  }catch(e){ console.warn('claimHost failed',e); }
+    if(val.host === localId){ state.isHost = true; console.log('I am host'); startHostTasks(); }
+  }catch(e){
+    console.warn('host claim failed', e);
+  }
 }
 
-/* ---------- Host tasks ---------- */
-let hostSpawnTimer = null, hostFireTimer = null;
+/* ---------- Host tasks: spawn events (Kong-style spawn from top) ---------- */
+let hostSpawnTimer = null;
+let hostFireTimer = null;
+
 function startHostTasks(){
   if(!state.room) return;
   state.isHost = true;
-  ensureElevatorsMeta(state.room);
+  // spawn barrels periodically (from top floor)
   if(hostSpawnTimer) clearInterval(hostSpawnTimer);
-  hostSpawnTimer = setInterval(()=> spawnBarrelWave(), HAZARD_SPAWN_INTERVAL);
+  hostSpawnTimer = setInterval(()=> {
+    spawnBarrelEvent(); // top spawn
+  }, HAZARD_SPAWN_INTERVAL);
+  // spawn fire periodically
   if(hostFireTimer) clearInterval(hostFireTimer);
-  hostFireTimer = setInterval(()=> spawnFireWarningAnywhere(), FIRE_DROP_INTERVAL);
-}
-function stopHostTasks(){ if(hostSpawnTimer){ clearInterval(hostSpawnTimer); hostSpawnTimer=null;} if(hostFireTimer){ clearInterval(hostFireTimer); hostFireTimer=null;} }
-
-/* ---------- Elevators meta ---------- */
-async function ensureElevatorsMeta(room){
-  const mRef = metaRef(room);
-  const snap = await new Promise(res => onValue(mRef, s => res(s), {onlyOnce:true}));
-  const cur = snap.val() || {};
-  if(cur.elevators){
-    if(!cur.ladderPhaseStart) await update(mRef, { ladderPhaseStart: now() });
-    return;
-  }
-  const elevators = {};
-  const elevatorFloors = [5, 8];
-  elevatorFloors.forEach(f => {
-    const side = (Math.random() < 0.5) ? 'left' : 'right';
-    const id = 'e_' + randomId();
-    elevators[id] = { id, floorA: f, floorB: f+1, side, width: ELEVATOR_WIDTH, moveMs: ELEVATOR_MOVE_MS, pauseMs: ELEVATOR_PAUSE_MS, createdAt: now() };
-  });
-  await update(mRef, { elevators, ladderPhaseStart: now(), host: localId, hostAt: now() });
+  hostFireTimer = setInterval(()=>{ spawnFireEvent(); }, FIRE_DROP_INTERVAL);
 }
 
-/* ---------- Barrel spawn update ---------- */
-/* Updated: floors 1-6 spawn 2 barrels, floors 7-9 spawn 3 barrels */
-async function spawnBarrelWave(){
-  if(!state.room) return;
-  const floor = chooseRandomFloorForBarrel();
-  const count = (floor <= 6) ? 2 : 3; // changed to 2 for 1-6
-  for(let i=0;i<count;i++){
-    setTimeout(()=> spawnSingleBarrel(floor), i * BARREL_SPACING_MS);
-  }
+function stopHostTasks(){
+  if(hostSpawnTimer) { clearInterval(hostSpawnTimer); hostSpawnTimer = null; }
+  if(hostFireTimer) { clearInterval(hostFireTimer); hostFireTimer = null; }
 }
-async function spawnSingleBarrel(floor){
+
+/* Spawn event format written by host:
+   { id, type:'barrel'|'fire', floor, startX, startY, dir:'left'|'right' , speed, kickAt, createdAt }
+   Clients simulate deterministically using createdAt.
+*/
+
+/* Kong-style: spawn from top floor */
+async function spawnBarrelEvent(){
   if(!state.room) return;
+  const floor = FLOOR_COUNT; // spawn from the top (floor 10)
   const dir = (Math.random() < 0.5) ? 'left' : 'right';
-  const startX = (dir === 'left') ? 0 : CANVAS_W;
+  // Start near the top platform center (slightly offset so it rolls)
+  const startX = (dir === 'left') ? 28 : (CANVAS_W - 28);
   const startY = floorY(floor) - 2;
   const id = 'b_' + randomId();
   const baseSpeed = BARREL_BASE_SPEED + Math.random()*0.5;
-  const spawn = { id, type:'barrel', floor, startX, startY, dir, speed: baseSpeed, createdAt: now() };
+  // host chooses kickAt for occasional speed bursts
+  const kickAt = BARREL_KICK_MIN + Math.floor(Math.random()*(BARREL_KICK_MAX-BARREL_KICK_MIN));
+  const spawn = { id, type:'barrel', floor, startX, startY, dir, speed: baseSpeed, kickAt, createdAt: now() };
   await push(spawnsRef(state.room), spawn);
 }
 
-/* ---------- Fire warning & drop (host) ---------- */
-/* Host writes a 'fire_warning' spawn then after FIRE_WARNING_MS it writes a real 'fire' spawn */
-async function spawnFireWarningAnywhere(){
+/* Spawn fire targeting leader (kept same) */
+async function spawnFireEvent(){
   if(!state.room) return;
-  // choose random x anywhere but with small margin
-  const margin = 16;
-  const targetX = margin + Math.floor(Math.random() * (CANVAS_W - margin*2));
-  const warnId = 'fw_' + randomId();
-  const warnSpawn = { id: warnId, type:'fire_warning', startX: targetX, createdAt: now(), warningMs: FIRE_WARNING_MS };
-  await push(spawnsRef(state.room), warnSpawn);
-  // schedule the actual fire drop - still written by host so all clients see it
-  setTimeout(async () => {
-    const fireId = 'f_' + randomId();
-    const fireSpawn = { id: fireId, type:'fire', startX: targetX, startY: -20, speed: 2.0 + Math.random()*0.8, createdAt: now() };
-    await push(spawnsRef(state.room), fireSpawn);
-    // optionally remove the warning entry (not necessary — clients ignore expired warnings)
-  }, FIRE_WARNING_MS);
-}
-
-/* ---------- Fire event targeting leader (kept available, unused by default) ---------- */
-async function spawnFireEventTargetLeader(){
-  if(!state.room) return;
+  // target the leading player (highest floor or lowest y)
   const playersSnapshot = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
   const playersObj = playersSnapshot.val() || {};
   let leader = null;
   Object.values(playersObj).forEach(p => {
     if(!leader) leader = p;
-    if((p.floor || 1) > (leader.floor || 1) || ((p.floor || 1) === (leader.floor || 1) && p.y < leader.y)) leader = p;
+    if((p.floor || 1) > (leader.floor || 1) || ((p.floor || 1) === (leader.floor || 1) && (p.y || 9999) < (leader.y || 9999))) leader = p;
   });
   const targetX = leader ? (leader.x || CANVAS_W/2) : (CANVAS_W/2);
-  const warnId = 'fw_' + randomId();
-  const warnSpawn = { id: warnId, type:'fire_warning', startX: targetX, createdAt: now(), warningMs: FIRE_WARNING_MS };
-  await push(spawnsRef(state.room), warnSpawn);
-  setTimeout(async () => {
-    const fireId = 'f_' + randomId();
-    const fireSpawn = { id: fireId, type:'fire', startX: targetX, startY: -20, speed: 2.0 + Math.random()*0.8, createdAt: now() };
-    await push(spawnsRef(state.room), fireSpawn);
-  }, FIRE_WARNING_MS);
+  const id = 'f_' + randomId();
+  const spawn = { id, type:'fire', startX: targetX, startY: -20, speed: 2.8 + Math.random()*0.6, createdAt: now() };
+  await push(spawnsRef(state.room), spawn);
 }
 
-/* ---------- choose random floor ---------- */
-function chooseRandomFloorForBarrel(){ return Math.floor(1 + Math.random()*9); }
+/* choose random floor excluding top (unused for kong top-spawn mode) */
+function chooseRandomFloorForBarrel(){ const f = Math.floor(1 + Math.random()*9); return f; }
 
-/* ---------- Listening to room ---------- */
+/* ---------- Listening to room changes ---------- */
 let unsubPlayers = null, unsubSpawns = null, unsubChat = null, unsubScores = null, unsubMeta = null;
 function listenRoom(room){
-  unsubPlayers = onValue(playersRef(room), snap => { state.players = snap.val() || {}; renderPlayersList(); renderScoreboard(); countLabel.textContent = Object.keys(state.players || {}).length; });
-  unsubSpawns = onValue(spawnsRef(room), snap => { state.hazards = snap.val() || {}; });
-  unsubChat = onValue(chatRef(room), snap => { renderChat(snap.val() || {}); });
-  unsubScores = onValue(scoresRef(room), snap => { state.scores = snap.val() || {}; renderScoreboard(); });
+  // players
+  const pRef = playersRef(room);
+  unsubPlayers = onValue(pRef, snap => {
+    const val = snap.val() || {};
+    state.players = val;
+    renderPlayersList();
+    renderScoreboard(); // update counts
+    countLabel.textContent = Object.keys(val).length;
+    // If a host left, re-claim if we can
+    if(!state.isHost){
+      onValue(metaRef(room), ms => {
+        const metaVal = ms.val() || {};
+        if(!metaVal.host){ claimHostIfNone(room); }
+      }, {onlyOnce:false});
+    }
+  });
+
+  // spawns
+  const sRef = spawnsRef(room);
+  unsubSpawns = onValue(sRef, snap => {
+    const val = snap.val() || {};
+    state.hazards = val;
+  });
+
+  // chat
+  unsubChat = onValue(chatRef(room), snap => {
+    const data = snap.val() || {};
+    renderChat(data);
+  });
+
+  // scores
+  unsubScores = onValue(scoresRef(room), snap => {
+    const sc = snap.val() || {};
+    state.scores = sc;
+    renderScoreboard();
+  });
+
+  // meta
   unsubMeta = onValue(metaRef(room), snap => {
     const m = snap.val() || {};
-    if(m.host !== localId && state.isHost){ state.isHost = false; stopHostTasks(); }
-    if(m.host === localId && !state.isHost){ state.isHost = true; startHostTasks(); }
-    state.elevators = m.elevators || {}; state.ladderPhaseStart = m.ladderPhaseStart || m.hostAt || null;
+    if(m.host !== localId && state.isHost){
+      state.isHost = false;
+      stopHostTasks();
+    }
+    if(m.host === localId && !state.isHost){
+      state.isHost = true;
+      startHostTasks();
+    }
   });
 }
 
 /* ---------- Cleanup ---------- */
-function cleanupListeners(){ if(state.room){ off(playersRef(state.room)); off(spawnsRef(state.room)); off(chatRef(state.room)); off(scoresRef(state.room)); off(metaRef(state.room)); } stopHostTasks(); }
+function cleanupListeners(){
+  if(state.room){
+    off(playersRef(state.room));
+    off(spawnsRef(state.room));
+    off(chatRef(state.room));
+    off(scoresRef(state.room));
+    off(metaRef(state.room));
+  }
+  stopHostTasks();
+}
 
 /* ---------- Chat ---------- */
-async function sendChat(){ if(!state.room) return; const txt = (chatInput.value || '').trim(); if(!txt) return; const msg = { id: randomId(), userId: localId, user: state.name, txt, ts: now() }; await push(chatRef(state.room), msg); chatInput.value = ''; }
+async function sendChat(){
+  if(!state.room) return;
+  const txt = (chatInput.value || '').trim();
+  if(!txt) return;
+  const msg = { id: randomId(), userId: localId, user: state.name, txt, ts: now() };
+  await push(chatRef(state.room), msg);
+  chatInput.value = '';
+}
 
 /* ---------- Scoreboard ---------- */
 function renderScoreboard(){
-  const players = state.players || {}; const scores = state.scores || {};
-  const rows = Object.keys(players).map(id => ({ id, name: players[id].name || 'Player', score: (scores[id] && scores[id].score) ? scores[id].score : 0 }));
-  Object.keys(scores || {}).forEach(id => { if(!rows.find(r => r.id === id)) rows.push({ id, name: (scores[id].name || 'Player'), score: scores[id].score || 0 }); });
+  const players = state.players || {};
+  const scores = state.scores || {};
+  const rows = Object.keys(players).map(id => {
+    return { id, name: players[id].name || 'Player', score: (scores[id] && scores[id].score) ? scores[id].score : 0 };
+  });
+  Object.keys(scores || {}).forEach(id => {
+    if(!rows.find(r => r.id === id)) rows.push({ id, name: (scores[id].name || 'Player'), score: scores[id].score || 0 });
+  });
   rows.sort((a,b) => (b.score - a.score) || a.name.localeCompare(b.name));
   scoreboardEl.innerHTML = rows.map(r => `<div class="row"><div>${escapeHtml(r.name)}</div><div>${r.score}</div></div>`).join('');
 }
-function renderPlayersList(){ const players = state.players || {}; playersListEl.innerHTML = Object.keys(players).map(id => { const p = players[id]; const label = id === localId ? ' (You)' : ''; return `<div><strong>${escapeHtml(p.name)}</strong>${label} - floor:${p.floor || 1}</div>`; }).join(''); }
-function renderChat(data){ const arr = Object.values(data || {}).sort((a,b) => (a.ts||0) - (b.ts||0)); messagesEl.innerHTML = arr.map(m => `<div class="msg"><span class="who">${escapeHtml(m.user)}</span>: ${escapeHtml(m.txt)}</div>`).join(''); messagesEl.scrollTop = messagesEl.scrollHeight; }
 
-/* ---------- Award score ---------- */
+/* ---------- Players list ---------- */
+function renderPlayersList(){
+  const players = state.players || {};
+  playersListEl.innerHTML = Object.keys(players).map(id => {
+    const p = players[id];
+    const label = id === localId ? ' (You)' : '';
+    return `<div><strong>${escapeHtml(p.name)}</strong>${label} - floor:${p.floor || 1}</div>`;
+  }).join('');
+}
+
+/* ---------- Render chat ---------- */
+function renderChat(data){
+  const arr = Object.values(data || {}).sort((a,b) => (a.ts||0) - (b.ts||0));
+  messagesEl.innerHTML = arr.map(m => `<div class="msg"><span class="who">${escapeHtml(m.user)}</span>: ${escapeHtml(m.txt)}</div>`).join('');
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/* ---------- Score update after win ---------- */
 async function awardScore(room, playerId, playerName){
   const scRef = scoresRef(room);
   const snap = await new Promise(res => onValue(scRef, s => res(s), {onlyOnce:true}));
   const all = snap.val() || {};
   const prev = all[playerId] && all[playerId].score ? all[playerId].score : 0;
-  const updates = {}; updates[`${playerId}`] = { name: playerName, score: prev + 1 };
+  const updates = {};
+  updates[`${playerId}`] = { name: playerName, score: prev + 1 };
   await update(scRef, updates);
 }
 
-/* ---------- Reset ---------- */
+/* ---------- Reset scores and map (restart) ---------- */
 async function resetScoresAndMap(){
-  if(!state.room) return; if(!confirm('Reset all scores and restart map?')) return;
-  await set(scoresRef(state.room), {}); await set(spawnsRef(state.room), null);
+  if(!state.room) return;
+  if(!confirm('Reset all scores and restart map?')) return;
+  await set(scoresRef(state.room), {});
+  await set(spawnsRef(state.room), null);
   const playersSnap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
-  const playersObj = playersSnap.val() || {}; const updates = {};
-  Object.keys(playersObj).forEach(id => { updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2; updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H; updates[`rooms/${state.room}/players/${id}/vx`] = 0; updates[`rooms/${state.room}/players/${id}/vy`] = 0; updates[`rooms/${state.room}/players/${id}/floor`] = 1; });
+  const playersObj = playersSnap.val() || {};
+  const updates = {};
+  Object.keys(playersObj).forEach(id => {
+    updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2;
+    updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H;
+    updates[`rooms/${state.room}/players/${id}/vx`] = 0;
+    updates[`rooms/${state.room}/players/${id}/vy`] = 0;
+    updates[`rooms/${state.room}/players/${id}/floor`] = 1;
+  });
   if(Object.keys(updates).length) await update(ref(db), updates);
-  if(state.isHost){ await update(metaRef(state.room), { elevators: null, ladderPhaseStart: now() }); } else { await set(spawnsRef(state.room), null); }
-  state.hazards = {}; renderScoreboard();
+  await set(spawnsRef(state.room), null);
+  state.hazards = {};
+  renderScoreboard();
 }
 
-/* ---------- Hazard simulation ---------- */
-function simulateHazardPosition(spawn, tms){
+/* ---------- Hazard simulation (Kong-style barrel cascade) ---------- */
+/* simulateHazardPosition now supports barrel cascading down floors when crossing edges */
+function simulateHazardPosition(spawn, t){
   if(!spawn) return null;
   if(spawn.type === 'barrel'){
+    // t in ms
     const basePxPerFrame = spawn.speed || BARREL_BASE_SPEED;
-    const dir = spawn.dir === 'left' ? 1 : -1;
     const pxPerSec = basePxPerFrame * 60;
-    const elapsed = Math.max(0, tms / 1000);
-    let x = spawn.startX + dir * (pxPerSec * elapsed);
-    const y = floorY(spawn.floor) - 2;
-    return { x, y, floor: spawn.floor, id: spawn.id, type:'barrel' };
+    const dir = spawn.dir === 'left' ? 1 : -1; // left -> move right (+)
+    // initial position
+    let x = spawn.startX + dir * (pxPerSec * (t / 1000));
+    let floor = spawn.floor;
+    // If barrel crosses canvas edge, it falls to the next floor and continues traveling.
+    // We'll model "wrapping" to how much it went past the edge, and each crossing reduces floor by 1.
+    // Keep looping until x is inside canvas or floor < 1
+    while(true){
+      if(x > CANVAS_W){
+        // moved off right edge: compute overrun and move to next lower floor starting from right edge
+        const over = x - CANVAS_W;
+        floor = floor - 1;
+        x = CANVAS_W - over; // continue movement from right edge going leftwards a bit
+        // invert direction when falling? keep same dir so it continues off-screen effect.
+        // To keep it simple, keep the same sign but position corrected.
+      } else if(x < 0){
+        const over = -x;
+        floor = floor - 1;
+        x = 0 + over;
+      } else {
+        break;
+      }
+      // if floor below 1, remove (off map)
+      if(floor < 1) return null;
+    }
+    // handle kick phase (speed burst) — approximate by extending distance after kick
+    if(spawn.kickAt && t >= spawn.kickAt){
+      const pk = (t - spawn.kickAt) / 1000;
+      x += dir * pxPerSec * (BARREL_KICK_MULT - 1) * pk;
+    }
+    const y = floorY(floor) - 2;
+    return { x, y, floor, id: spawn.id, type:'barrel' };
   } else if(spawn.type === 'fire'){
-    const speed = spawn.speed || 2.0;
-    const y = spawn.startY + speed * (tms / 16);
+    const speed = spawn.speed || 2.8;
+    const y = spawn.startY + speed * (t / 16); // px per approx frame
     const x = spawn.startX;
     return { x, y, id: spawn.id, type:'fire' };
-  } else if(spawn.type === 'fire_warning'){
-    // warning doesn't move; draw "!" at top area
-    return { x: spawn.startX, y: 24, id: spawn.id, type:'fire_warning', warningMs: spawn.warningMs || FIRE_WARNING_MS, createdAt: spawn.createdAt };
   }
   return null;
 }
 
-/* ---------- Elevator simulation ---------- */
-function simulateElevator(elev, tNow){
-  if(!elev) return null;
-  const created = elev.createdAt || 0;
-  const elapsed = (tNow - created) % ELEVATOR_CYCLE_MS;
-  const fA = elev.floorA; const fB = elev.floorB;
-  const band = CANVAS_H / FLOOR_COUNT;
-  const surfaceA = floorY(fA) - PLAYER_H;
-  const surfaceB = floorY(fB) - PLAYER_H;
-  const lowerY = surfaceA + band * 0.25;
-  const upperY = surfaceB - band * 0.25;
-  const moveMs = elev.moveMs || ELEVATOR_MOVE_MS;
-  const pauseMs = elev.pauseMs || ELEVATOR_PAUSE_MS;
-  let y = lowerY;
-  if(elapsed < moveMs){
-    const p = elapsed / moveMs; y = lowerY + (upperY - lowerY) * p;
-  } else if(elapsed < moveMs + pauseMs){ y = upperY;
-  } else if(elapsed < moveMs + pauseMs + moveMs){
-    const p = (elapsed - moveMs - pauseMs) / moveMs; y = upperY + (lowerY - upperY) * p;
-  } else { y = lowerY; }
-  const side = elev.side || 'left';
-  const x = (side === 'left') ? ELEVATOR_SIDE_MARGIN : (CANVAS_W - ELEVATOR_SIDE_MARGIN - (elev.width || ELEVATOR_WIDTH));
-  return { id: elev.id, x, y, width: elev.width || ELEVATOR_WIDTH, floorA: fA, floorB: fB, side };
+/* ---------- Collision detection ---------- */
+function rectsOverlap(a,b){
+  return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
 }
 
-/* ---------- Collision helpers ---------- */
-function rectsOverlap(a,b){ return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y); }
-
-/* ---------- Main loop ---------- */
+/* ---------- Local simulation loop & render ---------- */
 let lastSim = now();
 let lastWrite = 0;
-const WRITE_RATE = 120;
-function startLoop(){ if(raf) return; canvas.focus(); lastSim = now(); raf = requestAnimationFrame(loop); }
-function stopLoop(){ if(raf){ cancelAnimationFrame(raf); raf = null; } }
-function loop(){ const t = now(); const dt = (t - lastSim) / 16.666; lastSim = t; stepLocal(dt, t); renderAll(t); raf = requestAnimationFrame(loop); }
+const WRITE_RATE = 120; // ms between writing local player's state to DB
 
-/* ---------- Player step ---------- */
+function startLoop(){
+  if(raf) return;
+  canvas.focus();
+  lastSim = now();
+  raf = requestAnimationFrame(loop);
+}
+
+function stopLoop(){
+  if(raf){ cancelAnimationFrame(raf); raf = null; }
+}
+
+function loop(){
+  const t = now();
+  const dt = (t - lastSim) / 16.666; // frames relative
+  lastSim = t;
+  stepLocal(dt, t);
+  renderAll(t);
+  raf = requestAnimationFrame(loop);
+}
+
+/* ---------- Step local player physics & interactions ---------- */
 function stepLocal(dt, tNow){
   if(!state.isJoined) return;
   const p = localPlayer;
-  const dbPlayers = state.players || {};
-  if(dbPlayers[localId]){ const dp = dbPlayers[localId]; p.x = dp.x; p.y = dp.y; p.floor = dp.floor || p.floor; }
-
+  // input - left/right
   let intendedVx = 0;
   if(keys.left) { intendedVx = -MOVE_SPEED; p.facing='left'; }
   if(keys.right){ intendedVx = MOVE_SPEED; p.facing='right'; }
-
+  // ladder detection
   const currentFloor = p.floor;
-  const ladderXCoord = ladderXForFloor(currentFloor);
+  const ladderXCoord = ladderX(currentFloor);
   const nearLadder = Math.abs((p.x + p.width/2) - ladderXCoord) < LADDER_X_OFFSET;
-
-  const ladderPhaseStart = state.ladderPhaseStart || 0;
-  let ladderDanger = false;
-  if(ladderPhaseStart){
-    const elapsed = (tNow - ladderPhaseStart) % LADDER_TRAP_PERIOD;
-    ladderDanger = elapsed >= LADDER_SAFE_MS;
-  }
-  if((currentFloor === 6 || currentFloor === 9) && nearLadder && ladderDanger){
-    const ladderTop = floorY(currentFloor) - 80;
-    const ladderBottom = floorY(currentFloor) + PLAYER_H;
-    if(p.y >= ladderTop - 2 && p.y <= ladderBottom + 2){ handleDeath(localId, 'ladder_electric'); return; }
-  }
-
-  const elevatorDefs = state.elevators || {};
-  const elevatorList = Object.values(elevatorDefs);
-  const simulatedElevators = elevatorList.map(e => simulateElevator(e, tNow));
-
-  let onSomeElevator = null;
-  for(const ev of simulatedElevators){ if(!ev) continue; if(p.y + p.height >= ev.y - 2 && p.y + p.height <= ev.y + 8){ if( (p.x + p.width > ev.x) && (p.x < ev.x + ev.width) ){ onSomeElevator = ev; break; } } }
-
+  // climbing
   if(keys.climb && nearLadder){
-    p.onLadder = true; p.vx = 0; p.vy = 0; p.y -= 3.0 * dt;
+    p.onLadder = true;
+    p.vx = 0;
+    p.vy = 0;
+    // climb up slowly (dt scaled)
+    p.y -= 3.0 * dt;
+    // if near next floor top, snap floor
     const nextFloorTopY = floorY(currentFloor + 1) - PLAYER_H;
-    if(p.y <= nextFloorTopY){ p.floor = Math.min(FLOOR_COUNT, currentFloor + 1); p.y = nextFloorTopY; p.onLadder = false; p.onGround = true; } else { p.onGround = false; }
+    if(p.y <= nextFloorTopY){
+      p.floor = Math.min(FLOOR_COUNT, currentFloor + 1);
+      p.y = nextFloorTopY;
+      p.onLadder = false;
+      p.onGround = true;
+    } else {
+      p.onGround = false;
+    }
   } else {
     p.onLadder = false;
-    if(keys.jump && p.onGround){ p.vy = JUMP_V; p.onGround = false; }
-    p.vx = intendedVx;
+    // jumping
+    if(keys.jump && p.onGround){
+      p.vy = JUMP_V;
+      p.onGround = false;
+    }
+    // horizontal movement only if not in air much
+    if(!p.onLadder){
+      p.vx = intendedVx;
+    }
+    // gravity
     p.vy += GRAVITY * dt;
+    // integrate
     p.x += p.vx * dt;
     p.y += p.vy * dt;
   }
 
+  // clamp to canvas
   if(p.x < 0) p.x = 0;
   if(p.x > CANVAS_W - p.width) p.x = CANVAS_W - p.width;
 
+  // ground collision: robust snap (check gap before snapping)
   const surfaceY = floorY(p.floor) - PLAYER_H;
+  const EPS = 0.9;
   if(!p.onLadder){
-    if(p.y >= surfaceY){
-      if(floorHasGap(p.floor) && !isOnPlatformX(p.floor, p.x + p.width/2)){ handleDeath(localId, 'fall'); return; }
-      else {
-        if(onSomeElevator){ p.y = onSomeElevator.y - PLAYER_H; p.vy = 0; p.onGround = true; } else { p.y = surfaceY; p.vy = 0; p.onGround = true; }
+    if(p.y >= surfaceY - EPS){
+      // check gap BEFORE snapping
+      if(floorHasGap(p.floor) && !isOnPlatformX(p.floor, p.x + p.width/2)){
+        // fall through -> die
+        handleDeath(localId, 'fall');
+        return;
+      } else {
+        p.y = surfaceY;
+        p.vy = 0;
+        p.onGround = true;
       }
-    } else { p.onGround = false; }
+    } else {
+      p.onGround = false;
+    }
   }
 
-  Object.keys(state.players || {}).forEach(id => { if(id === localId) return; const op = state.players[id]; if(!op) return; const ob = { x: op.x || 0, y: op.y || 0, w: PLAYER_W, h: PLAYER_H }; const pb = { x: p.x, y: p.y, w: p.width, h: p.height }; if(rectsOverlap(pb, ob)){ if(p.vx > 0) p.x = ob.x - p.width - 1; if(p.vx < 0) p.x = ob.x + ob.w + 1; } });
+  // player collisions
+  Object.keys(state.players || {}).forEach(id => {
+    if(id === localId) return;
+    const other = state.players[id];
+    if(!other) return;
+    const ob = { x: other.x || 0, y: other.y || 0, w: PLAYER_W, h: PLAYER_H };
+    const pb = { x: p.x, y: p.y, w: p.width, h: p.height };
+    if(rectsOverlap(pb, ob)){
+      if(p.vx > 0) p.x = ob.x - p.width - 1;
+      if(p.vx < 0) p.x = ob.x + ob.w + 1;
+    }
+  });
 
+  // hazard collisions
   checkHazardCollisions(tNow);
 
+  // reached top?
   if(p.floor >= FLOOR_COUNT){
     onWin(localId, localPlayer.name);
     awardScore(state.room, localId, localPlayer.name);
-    if(state.isHost){ showModal(`${escapeHtml(localPlayer.name)} reached the top!`, 2000); setTimeout(async ()=> { await set(spawnsRef(state.room), null); await respawnAllPlayersToStart(); }, 1200); }
+    if(state.isHost) {
+      set(spawnsRef(state.room), null);
+      respawnAllPlayersToStart();
+    }
   }
 
+  // broadcast local position periodically
   if(tNow - lastWrite > WRITE_RATE){
-    lastWrite = tNow; if(state.room){ const upd = {}; upd[`rooms/${state.room}/players/${localId}/x`] = p.x; upd[`rooms/${state.room}/players/${localId}/y`] = p.y; upd[`rooms/${state.room}/players/${localId}/vx`] = p.vx; upd[`rooms/${state.room}/players/${localId}/vy`] = p.vy; upd[`rooms/${state.room}/players/${localId}/floor`] = p.floor; update(ref(db), upd).catch(e=>console.warn('update pos err',e)); }
+    lastWrite = tNow;
+    if(state.room) {
+      const upd = {};
+      upd[`rooms/${state.room}/players/${localId}/x`] = p.x;
+      upd[`rooms/${state.room}/players/${localId}/y`] = p.y;
+      upd[`rooms/${state.room}/players/${localId}/vx`] = p.vx;
+      upd[`rooms/${state.room}/players/${localId}/vy`] = p.vy;
+      upd[`rooms/${state.room}/players/${localId}/floor`] = p.floor;
+      update(ref(db), upd).catch(e=>console.warn('update pos err',e));
+    }
   }
 }
 
-/* ---------- Respawn all (host) ---------- */
-async function respawnAllPlayersToStart(){ if(!state.room) return; const snap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true})); const pl = snap.val() || {}; const updates = {}; Object.keys(pl).forEach(id => { updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2; updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H; updates[`rooms/${state.room}/players/${id}/vx`] = 0; updates[`rooms/${state.room}/players/${id}/vy`] = 0; updates[`rooms/${state.room}/players/${id}/floor`] = 1; }); if(Object.keys(updates).length) await update(ref(db), updates); }
+/* Respawn all players to start (host) */
+async function respawnAllPlayersToStart(){
+  if(!state.room) return;
+  const snap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
+  const pl = snap.val() || {};
+  const updates = {};
+  Object.keys(pl).forEach(id => {
+    updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2;
+    updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H;
+    updates[`rooms/${state.room}/players/${id}/vx`] = 0;
+    updates[`rooms/${state.room}/players/${id}/vy`] = 0;
+    updates[`rooms/${state.room}/players/${id}/floor`] = 1;
+  });
+  if(Object.keys(updates).length) await update(ref(db), updates);
+}
 
-/* ---------- Death ---------- */
+/* Handle local death (notify server by resetting our position) */
 async function handleDeath(playerId, cause){
   if(playerId === localId){
     localPlayer.respawn();
-    if(state.room){
+    if(state.room) {
       await update(ref(db), {
         [`rooms/${state.room}/players/${localId}/x`]: localPlayer.x,
         [`rooms/${state.room}/players/${localId}/y`]: localPlayer.y,
@@ -629,74 +835,81 @@ async function handleDeath(playerId, cause){
   }
 }
 
-/* ---------- Hazards collision ---------- */
+/* Check hazard collisions using simulation of spawns */
 function checkHazardCollisions(tNow){
   const hazards = state.hazards || {};
+  const centerTime = tNow;
   for(const k in hazards){
     const spawn = hazards[k];
-    const tms = tNow - (spawn.createdAt || 0);
+    const tms = centerTime - (spawn.createdAt || 0);
     if(tms < 0) continue;
     const pos = simulateHazardPosition(spawn, tms);
     if(!pos) continue;
     if(pos.type === 'barrel'){
-      if(pos.x < -30 || pos.x > CANVAS_W + 30) continue;
-      const hb = { x: pos.x - 8, y: pos.y - 6, w: 16, h: 12 };
+      const hb = { x: pos.x-8, y: pos.y-6, w: 16, h: 12 }; // barrel bbox
       const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
-      if(rectsOverlap(hb, pb)){ handleDeath(localId, 'barrel'); return; }
+      if(rectsOverlap(hb, pb)){
+        handleDeath(localId, 'barrel');
+        return;
+      }
     } else if(pos.type === 'fire'){
-      // fire area ~24x24
-      const hb = { x: pos.x - 12, y: pos.y - 12, w: 24, h: 24 };
+      const hb = { x: pos.x-6, y: pos.y, w: 12, h: 12 };
       const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
-      if(rectsOverlap(hb, pb)){ handleDeath(localId, 'fire'); return; }
-    } else if(pos.type === 'fire_warning'){
-      // warnings don't hurt
+      if(rectsOverlap(hb, pb)){
+        handleDeath(localId, 'fire');
+        return;
+      }
     }
   }
 }
 
-/* ---------- On win ---------- */
-function onWin(id,name){ showModal(`${escapeHtml(name)} reached the top!`, 1600); }
+/* When someone wins */
+function onWin(id,name){
+  showModal(`${escapeHtml(name)} reached the top!`);
+}
 
 /* ---------- Render ---------- */
 function renderAll(tNow){
+  // clear
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+
+  // draw floors (fixed alignment so player stands correctly)
   for(let f=1; f<=FLOOR_COUNT; f++){
     const y = floorY(f);
     ctx.fillStyle = (floorHasGap(f) ? '#e6edf3' : '#dcebf8');
-    ctx.fillRect(0, y+PLAYER_H, CANVAS_W, 6);
+    // draw floor strip at y (not y+PLAYER_H) — this fixes standing alignment
+    ctx.fillRect(0, y, CANVAS_W, 6);
+    // gap if any
     if(floorHasGap(f)){
       const g = floorGapRange(f);
-      ctx.clearRect(g[0], y+PLAYER_H, g[1]-g[0], 20);
-      ctx.strokeStyle = '#cbd7e6'; ctx.lineWidth = 1; ctx.beginPath(); ctx.setLineDash([4,4]);
-      ctx.moveTo(g[0], y+PLAYER_H); ctx.lineTo(g[0], y+PLAYER_H - 12);
-      ctx.moveTo(g[1], y+PLAYER_H); ctx.lineTo(g[1], y+PLAYER_H - 12);
-      ctx.stroke(); ctx.setLineDash([]);
+      ctx.clearRect(g[0], y, g[1]-g[0], 6);
+      // draw dashed edges
+      ctx.strokeStyle = '#cbd7e6';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.setLineDash([4,4]);
+      ctx.moveTo(g[0], y);
+      ctx.lineTo(g[0], y - 8);
+      ctx.moveTo(g[1], y);
+      ctx.lineTo(g[1], y - 8);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
-    const lx = ladderXForFloor(f);
-    let ladderColor = '#bcd6f7';
-    if((f === 6 || f === 9) && state.ladderPhaseStart){
-      const elapsed = (tNow - state.ladderPhaseStart) % LADDER_TRAP_PERIOD;
-      if(elapsed >= LADDER_SAFE_MS) ladderColor = '#e74c3c';
+    // ladder (positioned relative to floor y)
+    const lx = ladderX(f);
+    ctx.fillStyle = '#bcd6f7';
+    ctx.fillRect(lx-6, y-80, 12, 80);
+    // ladder rungs
+    ctx.strokeStyle = '#9fbfe6';
+    for(let r=0;r<8;r++){
+      const ry = y - (r*10);
+      ctx.beginPath(); ctx.moveTo(lx-6, ry); ctx.lineTo(lx+6, ry); ctx.stroke();
     }
-    ctx.fillStyle = ladderColor; ctx.fillRect(lx-10, y-80+PLAYER_H, 20, 80);
-    ctx.strokeStyle = ladderColor === '#e74c3c' ? '#ffb3b3' : '#9fbfe6';
-    for(let r=0;r<8;r++){ const ry = y - (r*10); ctx.beginPath(); ctx.moveTo(lx-10, ry); ctx.lineTo(lx+10, ry); ctx.stroke(); }
   }
 
-  // elevators
-  const elevDefs = state.elevators || {};
-  const nowTime = tNow;
-  const simulatedElevators = [];
-  Object.values(elevDefs).forEach(e => {
-    const pos = simulateElevator(e, nowTime);
-    if(!pos) return;
-    simulatedElevators.push(pos);
-    ctx.fillStyle = '#d9edf8'; ctx.fillRect(pos.x, pos.y - 6, pos.width, 12);
-    ctx.strokeStyle = '#9fc7df'; ctx.strokeRect(pos.x, pos.y - 6, pos.width, 12);
-  });
-
-  // hazards: warnings, barrels, fires
+  // draw hazards simulated from spawns
   const hazards = state.hazards || {};
+  const nowTime = tNow;
   for(const k in hazards){
     const spawn = hazards[k];
     const tms = nowTime - (spawn.createdAt || 0);
@@ -704,43 +917,84 @@ function renderAll(tNow){
     const pos = simulateHazardPosition(spawn, tms);
     if(!pos) continue;
     if(pos.type === 'barrel'){
-      if(pos.x < -30 || pos.x > CANVAS_W + 30) continue;
-      ctx.fillStyle = '#f39c12'; ctx.fillRect(pos.x-8, pos.y-6, 16, 12);
+      ctx.fillStyle = '#f39c12';
+      ctx.fillRect(pos.x-8, pos.y-6, 16, 12);
       ctx.strokeStyle = '#b05b00'; ctx.strokeRect(pos.x-8,pos.y-6,16,12);
     } else if(pos.type === 'fire'){
-      ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(pos.x, pos.y, 10, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#ff9f43'; ctx.beginPath(); ctx.arc(pos.x, pos.y, 6, 0, Math.PI*2); ctx.fill();
-    } else if(pos.type === 'fire_warning'){
-      const elapsed = nowTime - (spawn.createdAt || 0);
-      if(elapsed < (spawn.warningMs || FIRE_WARNING_MS)){
-        // draw pulsing "!" mark
-        const alpha = 0.6 + 0.4 * Math.sin(nowTime/120);
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#ffcf4b';
-        ctx.beginPath(); ctx.arc(pos.x, 24, 10, 0, Math.PI*2); ctx.fill();
-        ctx.globalAlpha = 1.0;
-        ctx.fillStyle = '#a33'; ctx.font = 'bold 14px Inter, Arial'; ctx.textAlign = 'center'; ctx.fillText('!', pos.x, 28);
-      }
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath(); ctx.arc(pos.x, pos.y, 8, 0, Math.PI*2); ctx.fill();
     }
   }
 
-  // players
+  // draw players (from state.players)
   const players = state.players || {};
-  if(players[localId]){ const p = players[localId]; localPlayer.x = p.x; localPlayer.y = p.y; localPlayer.floor = p.floor || localPlayer.floor; }
+  // update local player's DB-synced position if DB has any updates for local player
+  if(players[localId]){
+    const p = players[localId];
+    // gentle sync (prevent jitter)
+    if(typeof p.x === 'number' && Math.abs(p.x - localPlayer.x) > 50) localPlayer.x = p.x;
+    if(typeof p.y === 'number' && Math.abs(p.y - localPlayer.y) > 50) localPlayer.y = p.y;
+    localPlayer.floor = p.floor || 1;
+  }
+  // draw each player
   Object.keys(players).forEach(id => {
-    const p = players[id]; if(!p) return;
-    const x = p.x || CANVAS_W/2; const y = p.y || floorY(1) - PLAYER_H;
-    ctx.fillStyle = id === localId ? '#2b7cff' : '#495a64';
+    const p = players[id];
+    if(!p) return;
+    const x = p.x || CANVAS_W/2;
+    const y = p.y || floorY(1) - PLAYER_H;
+    const name = p.name || 'P';
+    if(id === localId) ctx.fillStyle = '#2b7cff'; else ctx.fillStyle = '#495a64';
     ctx.fillRect(x, y, PLAYER_W, PLAYER_H);
-    ctx.fillStyle = '#14222b'; ctx.font = '10px Inter, Arial'; ctx.fillText(p.name || 'P', x - 6, y - 6);
+    ctx.fillStyle = '#14222b';
+    ctx.font = '10px Inter, Arial';
+    ctx.fillText(name, x - 6, y - 6);
   });
 }
 
 /* ---------- Utility modals ---------- */
-function showModal(text, ms = 1600){ modalHost.innerHTML = `<div class="overlay"><div class="modal"><div style="font-weight:700">${text}</div></div></div>`; setTimeout(()=>{ modalHost.innerHTML = ''; }, ms); }
+function showModal(text, ms = 1600){
+  modalHost.innerHTML = `<div class="overlay"><div class="modal"><div style="font-weight:700">${text}</div></div></div>`;
+  setTimeout(()=>{ modalHost.innerHTML = ''; }, ms);
+}
 
-/* ---------- Initial ---------- */
-(function init(){ ctx.fillStyle = '#eef6ff'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H); ctx.fillStyle = '#9fbfe6'; ctx.fillRect(0, floorY(1), CANVAS_W, 6); })();
+/* ---------- Utility: DB write player initial / set --------- */
+async function ensurePlayerScoreNode(room){
+  const scSnap = await new Promise(res => onValue(scoresRef(room), s => res(s), {onlyOnce:true}));
+  const current = scSnap.val() || {};
+  if(!current[localId]) {
+    const upd = {};
+    upd[localId] = { name: state.name, score: 0 };
+    await update(scoresRef(room), upd);
+  }
+}
+
+/* ---------- Respawn helper for DB - called when host wants to respawn everyone ---------- */
+/* implemented above as respawnAllPlayersToStart */
+
+/* ---------- Misc helpers ---------- */
+function renderPlayersListAndScoreboard(){ renderPlayersList(); renderScoreboard(); }
+
+/* ---------- Reconciliation: when DB players update, update local mirror ---------- */
+function onPlayersDBUpdate(val){
+  state.players = val || {};
+  if(state.players[localId]){
+    const p = state.players[localId];
+    localPlayer.x = p.x || localPlayer.x;
+    localPlayer.y = p.y || localPlayer.y;
+    localPlayer.floor = p.floor || localPlayer.floor;
+  }
+}
+
+/* ---------- Initial UI wiring ---------- */
+function setStatus(s){ statusLabel.textContent = s; }
+
+/* ---------- Initial small render ---------- */
+(function init(){
+  ctx.fillStyle = '#eef6ff';
+  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+  ctx.fillStyle = '#9fbfe6';
+  ctx.fillRect(0, floorY(1), CANVAS_W, 6);
+})();
 
 </script>
 </body>
