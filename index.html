@@ -3,32 +3,82 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Office Gauntlet — Robust PvP</title>
+<title>Office Gauntlet — PvP (Fire + Barrel Update)</title>
 <style>
-/* (Same UI styles as before; trimmed for brevity) */
-:root{ --bg:#eef2f7; --panel:#fff; --muted:#7d8a95; --accent:#2b7cff; --danger:#e74c3c; }
-*{box-sizing:border-box}
-body{ margin:0; font-family:Inter, system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif; background:linear-gradient(180deg,#f3f6f9,#eef2f7); color:#122; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:18px; }
-.app{ width:1100px; max-width:100%; display:grid; grid-template-columns:320px 1fr 340px; gap:18px; align-items:start; }
-.card{ background:var(--panel); border-radius:10px; padding:12px; box-shadow:0 6px 20px rgba(15,20,30,.06); }
-.title{ font-weight:700; font-size:18px; margin-bottom:6px; }
-.input{ width:100%; padding:8px 10px; border-radius:8px; border:1px solid #e6ebef; }
-.btn{ padding:8px 10px; border-radius:8px; border:none; background:var(--accent); color:white; font-weight:700; cursor:pointer; }
-.btn.secondary{ background:#cbd5e1; color:#122; }
-.canvasWrap{ padding:12px; border-radius:10px; display:flex; justify-content:center; }
-canvas{ background:#cfe0f5; border-radius:6px; box-shadow:0 6px 18px rgba(5,10,20,.05); display:block; }
-.mutedSmall{ color:var(--muted); font-size:12px; }
-.overlay{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:9999; }
-.modal{ background:white; padding:18px; border-radius:10px; width:320px; text-align:center; font-weight:700; }
+  :root{
+    --bg: #eef2f7;
+    --panel: #ffffff;
+    --muted: #7d8a95;
+    --accent: #2b7cff;
+    --danger: #e74c3c;
+    --tile: #f7fafc;
+    --canvasW: 400px;
+    --canvasH: 600px;
+    --ui-gap: 12px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family: Inter, system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    background: linear-gradient(180deg,#f3f6f9 0%, #eef2f7 100%); color:#122; min-height:100vh;
+    display:flex; align-items:center; justify-content:center; padding:22px;
+  }
+
+  .app{ width:1100px; max-width:100%; display:grid; grid-template-columns: 320px 1fr 340px; gap:18px; align-items:start; }
+  .card{ background:var(--panel); border-radius:10px; padding:12px; box-shadow:0 6px 20px rgba(15,20,30,.06); }
+  .title{ font-weight:700; font-size:18px; margin-bottom:6px; }
+  .muted{ color:var(--muted); font-size:13px; }
+
+  /* Left panel: join / players */
+  #left { display:flex; flex-direction:column; gap:12px; }
+  .input{ width:100%; padding:8px 10px; border-radius:8px; border:1px solid #e6ebef; }
+  .btn { padding:8px 10px; border-radius:8px; border:none; background:var(--accent); color:white; font-weight:700; cursor:pointer; }
+  .btn.secondary{ background:#cbd5e1; color:#122; }
+
+  #playersList{ display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+
+  /* Center: game canvas + controls */
+  #center { display:flex; flex-direction:column; gap:12px; align-items:center; }
+  .canvasWrap{ background: linear-gradient(180deg,#fbfdff,#f7fbff); padding:12px; border-radius:10px; display:flex; gap:12px; }
+  canvas{ background:#cfe0f5; display:block; border-radius:6px; box-shadow:0 6px 18px rgba(5,10,20,.05); width:var(--canvasW); height:var(--canvasH); }
+
+  .hud{ display:flex; gap:10px; align-items:center; justify-content:center; }
+  .small { font-size:13px; color:var(--muted); }
+
+  /* Right: chat + scoreboard */
+  #right{ display:flex; flex-direction:column; gap:12px; }
+  #messages{ height:400px; overflow:auto; padding:8px; background:#fff; border-radius:8px; border:1px solid #e7edf2; }
+  .msg{ margin-bottom:8px; }
+  .msg .who{ font-weight:700; margin-right:6px; }
+  #chatRow{ display:flex; gap:8px; margin-top:8px; }
+  #chatInput{ flex:1; padding:8px; border-radius:8px; border:1px solid #e6ebef; }
+
+  #scoreboard{ padding:10px; background:#fff; border-radius:8px; border:1px solid #e7edf2; }
+  #scoreboard .row{ display:flex; justify-content:space-between; padding:6px 2px; border-bottom:1px dashed #f0f3f5; }
+  #scoreboard .row:last-child{ border-bottom:0; }
+
+  /* modal overlay */
+  .overlay{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:9999; }
+  .modal{ background:white; padding:18px; border-radius:10px; width:320px; text-align:center; }
+  .kbd{ background:#f2f6fb; padding:6px 8px; border-radius:6px; border:1px solid #e6ebef; font-weight:700; }
+
+  /* small helpers */
+  .mutedSmall{ color:var(--muted); font-size:12px; }
+  .danger{ color:var(--danger); font-weight:700; }
+  @media (max-width:1100px){
+    .app{ grid-template-columns: 1fr; padding:8px; }
+    #right{ order:3 }
+  }
 </style>
 </head>
 <body>
   <div class="app">
-    <!-- LEFT -->
-    <div>
+
+    <!-- LEFT: join / players / restart -->
+    <div id="left">
       <div class="card">
-        <div class="title">Office Gauntlet — Robust</div>
-        <div class="mutedSmall">Climb 10 floors — hazards reset you. Host authoritative for spawns.</div>
+        <div class="title">Office Gauntlet</div>
+        <div class="muted">Fast, simple & hard — climb 10 floors. Touch hazards = respawn.</div>
+
         <div style="margin-top:12px">
           <label class="mutedSmall">Name</label>
           <input id="nameInput" class="input" placeholder="Your name (e.g., Jason)" maxlength="20">
@@ -38,83 +88,90 @@ canvas{ background:#cfe0f5; border-radius:6px; box-shadow:0 6px 18px rgba(5,10,2
             <button id="joinBtn" class="btn">Join / Create</button>
             <button id="leaveBtn" class="btn secondary" style="display:none">Leave</button>
           </div>
-          <div class="mutedSmall" style="margin-top:8px">Max 5 players</div>
+          <div class="mutedSmall" style="margin-top:8px">Max 5 players. If room full you cannot join.</div>
         </div>
       </div>
 
-      <div class="card" style="margin-top:12px">
+      <div class="card">
         <div style="font-weight:700">Players</div>
         <div id="playersList" class="mutedSmall"></div>
       </div>
 
-      <div class="card" style="margin-top:12px">
+      <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center">
           <div style="font-weight:700">Controls</div>
           <div class="mutedSmall">W jump • S climb</div>
         </div>
-        <div class="mutedSmall" style="margin-top:8px">A = left, D = right, W = jump (short), S = climb ladder.</div>
+        <div style="margin-top:8px" class="mutedSmall">
+          A = left, D = right, W = jump (short), S = climb ladder. Use ladders to ascend.
+        </div>
         <div style="margin-top:10px; display:flex; gap:8px">
-          <button id="restartBtn" class="btn secondary">Restart (reset scores)</button>
+          <button id="restartBtn" class="btn secondary" title="Reset scores and map">Restart (reset scores)</button>
         </div>
       </div>
+
     </div>
 
-    <!-- CENTER -->
-    <div>
+    <!-- CENTER: Canvas -->
+    <div id="center">
       <div class="card">
-        <div style="display:flex; gap:12px; align-items:center; justify-content:space-between;">
-          <div>Room: <span id="roomLabel">—</span></div>
-          <div>Status: <span id="statusLabel">Not connected</span></div>
-          <div>Players: <span id="countLabel">0</span></div>
+        <div class="hud">
+          <div class="small">Room: <span id="roomLabel">—</span></div>
+          <div class="small">Status: <span id="statusLabel">Not connected</span></div>
+          <div class="small">Players: <span id="countLabel">0</span></div>
         </div>
         <div style="height:12px"></div>
+
         <div class="canvasWrap">
           <canvas id="gameCanvas" width="400" height="600" tabindex="0"></canvas>
         </div>
-        <div style="margin-top:8px; text-align:center" class="mutedSmall">First to top wins; scores persist until restart.</div>
+
+        <div style="margin-top:8px; display:flex; gap:10px; align-items:center; justify-content:center">
+          <div class="mutedSmall">First to top wins the round. Scores persist until restart.</div>
+        </div>
       </div>
     </div>
 
-    <!-- RIGHT -->
-    <div>
+    <!-- RIGHT: chat + scoreboard -->
+    <div id="right">
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center">
           <div style="font-weight:700">Chat</div>
           <div class="mutedSmall">Press Enter to send</div>
         </div>
-        <div id="messages" style="height:360px; overflow:auto; margin-top:8px; padding:8px; background:#fff; border-radius:8px; border:1px solid #e7edf2"></div>
-        <div style="display:flex; gap:8px; margin-top:8px;">
-          <input id="chatInput" class="input" placeholder="Say something..." />
+        <div id="messages"></div>
+        <div id="chatRow">
+          <input id="chatInput" placeholder="Say something..." />
           <button id="sendChatBtn" class="btn">Send</button>
         </div>
       </div>
 
-      <div class="card" style="margin-top:12px">
-        <div style="display:flex; justify-content:space-between; align-items:center">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
           <div style="font-weight:700">Scoreboard</div>
           <div class="mutedSmall">Ascensions</div>
         </div>
-        <div id="scoreboard" style="margin-top:8px"></div>
+        <div id="scoreboard"></div>
       </div>
     </div>
+
   </div>
 
+  <!-- modal host messages -->
   <div id="modalHost"></div>
 
 <script type="module">
-/* =============================
-   Office Gauntlet — Robust Single File
-   - Host writes spawns & meta, clients simulate.
-   - Defensive, well-commented, spawn lifecycle with TTL.
-   - Fire warning (!) -> fire drop: host writes both stages to DB.
-   - Elevator meta deterministic per round, client-simulated.
-   - Position writes are rate-limited bulk updates.
-   ============================= */
+/* ================================
+   Office Gauntlet — Fire + Barrel spam update
+   - All floors spawn 2 barrels (1-6), upper floors spawn 3 (7-9)
+   - Fire warnings (!) appear anywhere; 1.5s warning then fire drop
+   - Host-authoritative: host writes both warning and final fire spawn
+   ================================= */
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, push, onValue, off, update, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-/* ---------- FIREBASE CONFIGULAR (unchanged) ---------- */
+/* ---------- Firebase config ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
   authDomain: "mindbattle-f00a3.firebaseapp.com",
@@ -142,7 +199,7 @@ const sendChatBtn = document.getElementById('sendChatBtn');
 const scoreboardEl = document.getElementById('scoreboard');
 const modalHost = document.getElementById('modalHost');
 
-/* ---------- GAME CONSTANTS (tweakable) ---------- */
+/* ---------- Game constants ---------- */
 const CANVAS_W = 400, CANVAS_H = 600;
 const FLOOR_COUNT = 10;
 const PLAYER_W = 10, PLAYER_H = 12;
@@ -151,716 +208,303 @@ const MOVE_SPEED = 8.0;
 const JUMP_V = -10.0;
 const MAX_PLAYERS = 5;
 
-// ladder/elevator/gap tuning (per your decisions)
 const LADDER_X_OFFSET = 28;
 const LADDER_OFFSET_FROM_WALL = 60;
 const ELEVATOR_WIDTH = 60;
-const ELEVATOR_SIDE_MARGIN = 50; // X margin from wall (50px)
+const ELEVATOR_SIDE_MARGIN = 50;
 const ELEVATOR_MOVE_MS = 1500;
 const ELEVATOR_PAUSE_MS = 500;
 const ELEVATOR_CYCLE_MS = 2 * (ELEVATOR_MOVE_MS + ELEVATOR_PAUSE_MS);
 
-// hazards
-const HAZARD_SPAWN_INTERVAL = 1800; // global wave spawn period (host)
-const BARREL_BASE_SPEED = 1.6; // px/frame-equivalent
-const BARREL_SPACING_MS = 400; // interval between barrels in same wave
-const FIRE_DROP_INTERVAL = 3000; // host fires warnings every Xms
-const FIRE_WARNING_MS = 1500; // 1.5s warning -> user requested
-const FIRE_LIFETIME_MS = 3000; // how long fire remains
-const SPAWN_TTL_MS = 25000; // cleanup threshold for spawns (host removes after this many ms)
-
-// ladder trap
+const HAZARD_SPAWN_INTERVAL = 1800;
+const BARREL_BASE_SPEED = 1.6;
+const BARREL_SPACING_MS = 400;
+const FIRE_DROP_INTERVAL = 3000;
+const FIRE_WARNING_MS = 1500; // user requested 1.5s
 const LADDER_TRAP_PERIOD = 7000;
 const LADDER_SAFE_MS = 5000;
 
-// db write tuning
-const POSITION_WRITE_MS = 120; // rate-limit writes
-
-/* ---------- STATE ---------- */
+/* ---------- State ---------- */
 const localId = randomId();
 let state = {
   room: null,
   name: null,
   isJoined: false,
-  players: {},    // db mirror
-  spawns: {},     // db mirror spawns
-  meta: {},       // meta (host, elevators, ladderPhaseStart)
+  players: {},
   scores: {},
+  hazards: {},
   isHost: false,
-  hostTimers: { spawnTimer: null, fireTimer: null, cleanupTimer: null },
+  elevators: {},
+  ladderPhaseStart: null,
 };
 
-/* ---------- HELPERS ---------- */
-function now(){ return Date.now(); }
+/* ---------- Helpers ---------- */
 function randomId(){ return Math.random().toString(36).slice(2,10); }
-function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
-function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
+function now(){ return Date.now(); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 
-/* ---------- MAP / LAYOUT ---------- */
+/* ---------- Layout helpers ---------- */
 function floorY(f){ const band = CANVAS_H / FLOOR_COUNT; return Math.round(CANVAS_H - band * (f - 1) - 2); }
-function ladderSide(f){ return (f % 2 === 1) ? 'right' : 'left'; } // odd floors have ladder on right
+function ladderSide(f){ return (f % 2 === 1) ? 'right' : 'left'; }
 function ladderXForFloor(f){ return ladderSide(f) === 'right' ? CANVAS_W - LADDER_OFFSET_FROM_WALL : LADDER_OFFSET_FROM_WALL; }
 function floorHasGap(f){ return f === 4 || f === 7; }
-function floorGapRange(f){ if(!floorHasGap(f)) return null; const gapW = 30; const cx = CANVAS_W/2; return [cx - gapW/2, cx + gapW/2]; }
+function floorGapRange(f){ if(!floorHasGap(f)) return null; const gapW = 30; const cx = CANVAS_W / 2; return [cx - gapW/2, cx + gapW/2]; }
 function isOnPlatformX(f,x){ const gap = floorGapRange(f); if(!gap) return true; return !(x > gap[0] && x < gap[1]); }
 
-/* ---------- LOCAL PLAYER (client representation) ---------- */
+/* ---------- Local player ---------- */
 class LocalPlayer {
   constructor(id, name){
     this.id = id; this.name = name;
     this.x = CANVAS_W/2; this.y = floorY(1) - PLAYER_H;
-    this.vx = 0; this.vy = 0; this.floor = 1; this.onLadder = false; this.onGround = true; this.width = PLAYER_W; this.height = PLAYER_H;
-    this.score = 0; this.facing = 'right';
+    this.vx = 0; this.vy = 0; this.onGround = true; this.onLadder = false;
+    this.floor = 1; this.width = PLAYER_W; this.height = PLAYER_H; this.score = 0; this.facing='right';
   }
-  respawn(){
-    this.x = CANVAS_W/2; this.y = floorY(1) - PLAYER_H;
-    this.vx = 0; this.vy = 0; this.floor = 1; this.onLadder = false; this.onGround = true;
-  }
+  respawn(){ this.x = CANVAS_W/2; this.y = floorY(1) - PLAYER_H; this.vx = 0; this.vy = 0; this.floor = 1; this.onGround = true; this.onLadder = false; }
+  bbox(){ return { x:this.x, y:this.y, w:this.width, h:this.height }; }
 }
-const localPlayer = new LocalPlayer(localId, 'Player');
-
-/* ---------- INPUT ---------- */
+let localPlayer = new LocalPlayer(localId, 'Player');
 let keys = {};
-document.addEventListener('keydown', e => {
-  if(document.activeElement === chatInput) return;
-  if(e.key === 'a' || e.key === 'A') keys.left = true;
-  if(e.key === 'd' || e.key === 'D') keys.right = true;
-  if(e.key === 'w' || e.key === 'W') keys.jump = true;
-  if(e.key === 's' || e.key === 'S') keys.climb = true;
-});
-document.addEventListener('keyup', e => {
-  if(document.activeElement === chatInput) return;
-  if(e.key === 'a' || e.key === 'A') keys.left = false;
-  if(e.key === 'd' || e.key === 'D') keys.right = false;
-  if(e.key === 'w' || e.key === 'W') keys.jump = false;
-  if(e.key === 's' || e.key === 'S') keys.climb = false;
-});
+let raf = null;
 
-/* ---------- DOM EVENT HOOKS ---------- */
+/* ---------- Input ---------- */
+document.addEventListener('keydown', e => { if(document.activeElement === chatInput) return; if(e.key === 'a' || e.key === 'A') keys.left = true; if(e.key === 'd' || e.key === 'D') keys.right = true; if(e.key === 'w' || e.key === 'W') keys.jump = true; if(e.key === 's' || e.key === 'S') keys.climb = true; });
+document.addEventListener('keyup', e => { if(document.activeElement === chatInput) return; if(e.key === 'a' || e.key === 'A') keys.left = false; if(e.key === 'd' || e.key === 'D') keys.right = false; if(e.key === 'w' || e.key === 'W') keys.jump = false; if(e.key === 's' || e.key === 'S') keys.climb = false; });
+
+/* ---------- DOM events ---------- */
 joinBtn.onclick = joinRoom;
 leaveBtn.onclick = leaveRoom;
 restartBtn.onclick = resetScoresAndMap;
 sendChatBtn.onclick = sendChat;
 chatInput.addEventListener('keydown', (e)=> { if(e.key === 'Enter') sendChat(); });
 
-/* ---------- DB PATH HELPERS ---------- */
+/* ---------- DB paths ---------- */
 function roomPath(r){ return `rooms/${r}`; }
-function playersRefPath(r){ return `${roomPath(r)}/players`; }
-function spawnsRefPath(r){ return `${roomPath(r)}/spawns`; }
-function metaRefPath(r){ return `${roomPath(r)}/meta`; }
-function scoresRefPath(r){ return `${roomPath(r)}/scores`; }
-function chatRefPath(r){ return `${roomPath(r)}/chat`; }
+function playersRef(r){ return ref(db, `${roomPath(r)}/players`); }
+function playerRef(r,id){ return ref(db, `${roomPath(r)}/players/${id}`); }
+function spawnsRef(r){ return ref(db, `${roomPath(r)}/spawns`); }
+function chatRef(r){ return ref(db, `${roomPath(r)}/chat`); }
+function scoresRef(r){ return ref(db, `${roomPath(r)}/scores`); }
+function metaRef(r){ return ref(db, `${roomPath(r)}/meta`); }
 
-/* ---------- JOIN / LEAVE ---------- */
+/* ---------- Join / Leave ---------- */
 async function joinRoom(){
-  const name = (nameInput.value || '').trim() || ('P' + localId.slice(0,4));
+  const name = (nameInput.value || '').trim() || ('P'+localId.slice(0,4));
   const room = (roomInput.value || '').trim();
   if(!room){ alert('Enter room code'); return; }
-
-  // check occupancy
-  const playersSnap = await new Promise(res => onValue(ref(db, playersRefPath(room)), s => res(s), {onlyOnce:true}));
-  const existing = playersSnap.val() || {};
-  if(Object.keys(existing).length >= MAX_PLAYERS){ alert('Room full (max ' + MAX_PLAYERS + ')'); return; }
-
+  const snap = await new Promise(res => onValue(playersRef(room), s => res(s), {onlyOnce:true}));
+  const existing = snap.val() || {};
+  if(Object.keys(existing).length >= MAX_PLAYERS){ alert('Room full (max ' + MAX_PLAYERS + '). Try another code.'); return; }
   state.room = room; state.name = name; localPlayer.name = name;
   roomLabel.textContent = room; statusLabel.textContent = 'Joining...';
-
-  // write presence
-  await set(ref(db, `${playersRefPath(room)}/${localId}`), {
-    id: localId, name, x: localPlayer.x, y: localPlayer.y, vx:0, vy:0, floor:1, joinedAt: now()
-  });
-
-  // onDisconnect removal: best-effort
-  try{ ref(db, `${playersRefPath(room)}/${localId}`).onDisconnect().remove(); }catch(e){ /* some envs don't support */ }
-
-  // attempt host claim
+  await set(playerRef(room, localId), { id: localId, name: name, x: localPlayer.x, y: localPlayer.y, vx:0, vy:0, floor:1, joinedAt: now() });
+  try{ playerRef(room, localId).onDisconnect().remove(); }catch(e){}
   await claimHostIfNone(room);
-
-  // UI
-  joinBtn.style.display = 'none';
-  leaveBtn.style.display = 'inline-block';
-  statusLabel.textContent = 'Playing';
-  state.isJoined = true;
-
-  // start listening and loop
-  listenRoom(room);
-  startLoop();
+  joinBtn.style.display = 'none'; leaveBtn.style.display = 'inline-block';
+  statusLabel.textContent = 'Playing'; state.isJoined = true;
+  listenRoom(room); startLoop();
 }
 
-/* Leave */
+/* ---------- Leave ---------- */
 async function leaveRoom(){
   if(!state.room) return;
   cleanupListeners();
-  try { await remove(ref(db, `${playersRefPath(state.room)}/${localId}`)); } catch(e){ console.warn('leave remove fail', e); }
+  await remove(playerRef(state.room, localId));
   state.isJoined = false; state.isHost = false; state.room = null;
   roomLabel.textContent = '—'; statusLabel.textContent = 'Not connected';
   joinBtn.style.display = 'inline-block'; leaveBtn.style.display = 'none';
   stopLoop();
 }
 
-/* ---------- HOST ELECTION (transactional) ---------- */
+/* ---------- Host claim ---------- */
 async function claimHostIfNone(room){
-  const metaRef = ref(db, metaRefPath(room));
+  const mRef = metaRef(room);
   try{
-    await runTransaction(metaRef, cur => {
-      if(!cur) cur = {};
-      if(!cur.host) { cur.host = localId; cur.hostAt = now(); }
-      return cur;
-    });
-    // re-check
-    const snap = await new Promise(res => onValue(metaRef, s => res(s), {onlyOnce:true}));
+    await runTransaction(mRef, cur => { if(!cur) cur = {}; if(!cur.host){ cur.host = localId; cur.hostAt = now(); } return cur; });
+    const snap = await new Promise(res => onValue(mRef, s => res(s), {onlyOnce:true}));
     const val = snap.val() || {};
-    if(val.host === localId){
-      state.isHost = true;
-      startHostTasks(); // start timers
-    }
-  }catch(e){
-    console.warn('host claim failed', e);
-  }
+    if(val.host === localId){ state.isHost = true; startHostTasks(); }
+  }catch(e){ console.warn('claimHost failed',e); }
 }
 
-/* ---------- HOST TASKS: spawn waves, fire warnings, cleanup ---------- */
+/* ---------- Host tasks ---------- */
+let hostSpawnTimer = null, hostFireTimer = null;
 function startHostTasks(){
   if(!state.room) return;
-  if(state.hostTimers.spawnTimer) clearInterval(state.hostTimers.spawnTimer);
-  if(state.hostTimers.fireTimer) clearInterval(state.hostTimers.fireTimer);
-  if(state.hostTimers.cleanupTimer) clearInterval(state.hostTimers.cleanupTimer);
-
-  // ensure elevators meta exists for this round
+  state.isHost = true;
   ensureElevatorsMeta(state.room);
-
-  // spawn waves (barrels) at fixed interval
-  state.hostTimers.spawnTimer = setInterval(() => {
-    spawnBarrelWaveHost();
-  }, HAZARD_SPAWN_INTERVAL);
-
-  // periodic fire warnings
-  state.hostTimers.fireTimer = setInterval(() => {
-    spawnFireWarningHost(); // writes both warning and schedules real fire
-  }, FIRE_DROP_INTERVAL);
-
-  // cleanup: remove old spawns (TTL) periodically
-  state.hostTimers.cleanupTimer = setInterval(async () => {
-    try{ await cleanupExpiredSpawns(state.room); } catch(e){ console.warn('cleanup failed', e); }
-  }, 5000);
+  if(hostSpawnTimer) clearInterval(hostSpawnTimer);
+  hostSpawnTimer = setInterval(()=> spawnBarrelWave(), HAZARD_SPAWN_INTERVAL);
+  if(hostFireTimer) clearInterval(hostFireTimer);
+  hostFireTimer = setInterval(()=> spawnFireWarningAnywhere(), FIRE_DROP_INTERVAL);
 }
+function stopHostTasks(){ if(hostSpawnTimer){ clearInterval(hostSpawnTimer); hostSpawnTimer=null;} if(hostFireTimer){ clearInterval(hostFireTimer); hostFireTimer=null;} }
 
-function stopHostTasks(){
-  if(state.hostTimers.spawnTimer){ clearInterval(state.hostTimers.spawnTimer); state.hostTimers.spawnTimer = null; }
-  if(state.hostTimers.fireTimer){ clearInterval(state.hostTimers.fireTimer); state.hostTimers.fireTimer = null; }
-  if(state.hostTimers.cleanupTimer){ clearInterval(state.hostTimers.cleanupTimer); state.hostTimers.cleanupTimer = null; }
-}
-
-/* ---------- Elevator meta creation (host writes) ---------- */
+/* ---------- Elevators meta ---------- */
 async function ensureElevatorsMeta(room){
-  const mRef = ref(db, metaRefPath(room));
+  const mRef = metaRef(room);
   const snap = await new Promise(res => onValue(mRef, s => res(s), {onlyOnce:true}));
   const cur = snap.val() || {};
   if(cur.elevators){
-    // ensure ladderPhaseStart exists
     if(!cur.ladderPhaseStart) await update(mRef, { ladderPhaseStart: now() });
     return;
   }
-  // create elevator defs with random side but deterministic fields
-  const elevatorFloors = [5, 8]; // lower floors for the pairs
   const elevators = {};
+  const elevatorFloors = [5, 8];
   elevatorFloors.forEach(f => {
-    const id = 'e_' + randomId();
     const side = (Math.random() < 0.5) ? 'left' : 'right';
-    elevators[id] = {
-      id,
-      floorA: f,
-      floorB: f + 1,
-      side,
-      width: ELEVATOR_WIDTH,
-      moveMs: ELEVATOR_MOVE_MS,
-      pauseMs: ELEVATOR_PAUSE_MS,
-      createdAt: now()
-    };
+    const id = 'e_' + randomId();
+    elevators[id] = { id, floorA: f, floorB: f+1, side, width: ELEVATOR_WIDTH, moveMs: ELEVATOR_MOVE_MS, pauseMs: ELEVATOR_PAUSE_MS, createdAt: now() };
   });
-  // write meta in one update
   await update(mRef, { elevators, ladderPhaseStart: now(), host: localId, hostAt: now() });
 }
 
-/* ---------- HOST: spawn waves (updated counts) ---------- */
-function spawnBarrelWaveHost(){
+/* ---------- Barrel spawn update ---------- */
+/* Updated: floors 1-6 spawn 2 barrels, floors 7-9 spawn 3 barrels */
+async function spawnBarrelWave(){
   if(!state.room) return;
-  const f = chooseRandomFloorForBarrel();
-  const count = (f <= 6) ? 2 : 3; // 1-6 -> 2, 7-9 -> 3
+  const floor = chooseRandomFloorForBarrel();
+  const count = (floor <= 6) ? 2 : 3; // changed to 2 for 1-6
   for(let i=0;i<count;i++){
-    setTimeout(()=> {
-      spawnBarrelHost(f);
-    }, i * BARREL_SPACING_MS);
+    setTimeout(()=> spawnSingleBarrel(floor), i * BARREL_SPACING_MS);
   }
 }
-async function spawnBarrelHost(floor){
+async function spawnSingleBarrel(floor){
   if(!state.room) return;
   const dir = (Math.random() < 0.5) ? 'left' : 'right';
-  const startX = dir === 'left' ? -10 : (CANVAS_W + 10);
+  const startX = (dir === 'left') ? 0 : CANVAS_W;
   const startY = floorY(floor) - 2;
   const id = 'b_' + randomId();
-  const baseSpeed = BARREL_BASE_SPEED + Math.random()*0.6;
-  const spawn = {
-    id, type: 'barrel', floor, startX, startY, dir, speed: baseSpeed,
-    createdAt: now(), expireAt: now() + SPAWN_TTL_MS
-  };
-  await push(ref(db, spawnsRefPath(state.room)), spawn);
+  const baseSpeed = BARREL_BASE_SPEED + Math.random()*0.5;
+  const spawn = { id, type:'barrel', floor, startX, startY, dir, speed: baseSpeed, createdAt: now() };
+  await push(spawnsRef(state.room), spawn);
 }
 
-/* ---------- HOST: fire warning then fire ---------- */
-async function spawnFireWarningHost(){
+/* ---------- Fire warning & drop (host) ---------- */
+/* Host writes a 'fire_warning' spawn then after FIRE_WARNING_MS it writes a real 'fire' spawn */
+async function spawnFireWarningAnywhere(){
   if(!state.room) return;
-  // pick random X anywhere inside margins
-  const margin = 12;
-  const x = margin + Math.floor(Math.random() * (CANVAS_W - margin*2));
+  // choose random x anywhere but with small margin
+  const margin = 16;
+  const targetX = margin + Math.floor(Math.random() * (CANVAS_W - margin*2));
   const warnId = 'fw_' + randomId();
-  const created = now();
-  const warn = { id: warnId, type: 'fire_warning', startX: x, createdAt: created, warningMs: FIRE_WARNING_MS, expireAt: created + FIRE_WARNING_MS + FIRE_LIFETIME_MS };
-  await push(ref(db, spawnsRefPath(state.room)), warn);
-
-  // schedule actual fire spawn write (host-only)
+  const warnSpawn = { id: warnId, type:'fire_warning', startX: targetX, createdAt: now(), warningMs: FIRE_WARNING_MS };
+  await push(spawnsRef(state.room), warnSpawn);
+  // schedule the actual fire drop - still written by host so all clients see it
   setTimeout(async () => {
     const fireId = 'f_' + randomId();
-    const fire = { id: fireId, type: 'fire', startX: x, startY: -20, speed: 2.0 + Math.random()*0.8, createdAt: now(), expireAt: now() + FIRE_LIFETIME_MS };
-    try { await push(ref(db, spawnsRefPath(state.room)), fire); } catch(e) { console.warn('fire push failed', e); }
+    const fireSpawn = { id: fireId, type:'fire', startX: targetX, startY: -20, speed: 2.0 + Math.random()*0.8, createdAt: now() };
+    await push(spawnsRef(state.room), fireSpawn);
+    // optionally remove the warning entry (not necessary — clients ignore expired warnings)
   }, FIRE_WARNING_MS);
 }
 
-/* ---------- HOST: cleanup expired spawns ---------- */
-async function cleanupExpiredSpawns(room){
-  const sRef = ref(db, spawnsRefPath(room));
-  const snap = await new Promise(res => onValue(sRef, s => res(s), {onlyOnce:true}));
-  const val = snap.val() || {};
-  const nowTs = now();
-  const updates = {};
-  Object.keys(val).forEach(k => {
-    const sp = val[k];
-    if(sp && sp.expireAt && sp.expireAt < nowTs){
-      updates[k] = null; // remove expired spawn
-    }
-  });
-  if(Object.keys(updates).length){
-    await update(ref(db, spawnsRefPath(room)), updates);
-  }
-}
-
-/* ---------- HELPERS: choose random floor ---------- */
-function chooseRandomFloorForBarrel(){ return Math.floor(1 + Math.random() * 9); }
-
-/* ---------- LISTENERS: mirror DB to local state ---------- */
-let unsub = { players: null, spawns: null, meta: null, scores: null, chat: null };
-function listenRoom(room){
-  // players
-  unsub.players = onValue(ref(db, playersRefPath(room)), snap => {
-    state.players = snap.val() || {};
-    renderPlayersList();
-    renderScoreboard();
-    countLabel.textContent = Object.keys(state.players || {}).length;
-  });
-  // spawns
-  unsub.spawns = onValue(ref(db, spawnsRefPath(room)), snap => {
-    state.spawns = snap.val() || {};
-  });
-  // meta
-  unsub.meta = onValue(ref(db, metaRefPath(room)), snap => {
-    state.meta = snap.val() || {};
-    // if host changed away from us -> stop timers
-    if(state.meta.host !== localId && state.isHost){
-      state.isHost = false;
-      stopHostTasks();
-    }
-    // if host is us and wasn't previously -> start timers
-    if(state.meta.host === localId && !state.isHost){
-      state.isHost = true;
-      startHostTasks();
-    }
-  });
-  // scores
-  unsub.scores = onValue(ref(db, scoresRefPath(room)), snap => {
-    state.scores = snap.val() || {};
-    renderScoreboard();
-  });
-  // chat
-  unsub.chat = onValue(ref(db, chatRefPath(room)), snap => {
-    renderChat(snap.val() || {});
-  });
-}
-
-/* ---------- CLEANUP LISTENERS ---------- */
-function cleanupListeners(){
-  if(state.room){
-    try { off(ref(db, playersRefPath(state.room))); } catch(e){}
-    try { off(ref(db, spawnsRefPath(state.room))); } catch(e){}
-    try { off(ref(db, metaRefPath(state.room))); } catch(e){}
-    try { off(ref(db, scoresRefPath(state.room))); } catch(e){}
-    try { off(ref(db, chatRefPath(state.room))); } catch(e){}
-  }
-  stopHostTasks();
-}
-
-/* ---------- CHAT ---------- */
-async function sendChat(){
+/* ---------- Fire event targeting leader (kept available, unused by default) ---------- */
+async function spawnFireEventTargetLeader(){
   if(!state.room) return;
-  const txt = (chatInput.value || '').trim();
-  if(!txt) return;
-  const msg = { id: randomId(), userId: localId, user: state.name, txt, ts: now() };
-  await push(ref(db, chatRefPath(state.room)), msg);
-  chatInput.value = '';
-}
-function renderChat(data){
-  const arr = Object.values(data || {}).sort((a,b) => (a.ts||0) - (b.ts||0));
-  messagesEl.innerHTML = arr.map(m => `<div style="margin-bottom:6px;"><strong>${escapeHtml(m.user)}</strong>: ${escapeHtml(m.txt)}</div>`).join('');
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-/* ---------- SCOREBOARD ---------- */
-function renderScoreboard(){
-  const players = state.players || {};
-  const scores = state.scores || {};
-  const rows = Object.keys(players).map(id => ({ id, name: players[id].name || 'Player', score: (scores[id] && scores[id].score) ? scores[id].score : 0 }));
-  // include leftover scores
-  Object.keys(scores || {}).forEach(id => {
-    if(!rows.find(r => r.id === id)) rows.push({ id, name: (scores[id].name||'Player'), score: scores[id].score || 0 });
+  const playersSnapshot = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
+  const playersObj = playersSnapshot.val() || {};
+  let leader = null;
+  Object.values(playersObj).forEach(p => {
+    if(!leader) leader = p;
+    if((p.floor || 1) > (leader.floor || 1) || ((p.floor || 1) === (leader.floor || 1) && p.y < leader.y)) leader = p;
   });
-  rows.sort((a,b) => (b.score - a.score) || a.name.localeCompare(b.name));
-  scoreboardEl.innerHTML = rows.map(r => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #f0f3f5;"><div>${escapeHtml(r.name)}</div><div>${r.score}</div></div>`).join('');
-}
-function renderPlayersList(){
-  const players = state.players || {};
-  playersListEl.innerHTML = Object.keys(players).map(id => {
-    const p = players[id]; const label = id === localId ? ' (You)' : '';
-    return `<div style="margin-bottom:6px;"><strong>${escapeHtml(p.name)}</strong>${label} - floor:${p.floor||1}</div>`;
-  }).join('');
+  const targetX = leader ? (leader.x || CANVAS_W/2) : (CANVAS_W/2);
+  const warnId = 'fw_' + randomId();
+  const warnSpawn = { id: warnId, type:'fire_warning', startX: targetX, createdAt: now(), warningMs: FIRE_WARNING_MS };
+  await push(spawnsRef(state.room), warnSpawn);
+  setTimeout(async () => {
+    const fireId = 'f_' + randomId();
+    const fireSpawn = { id: fireId, type:'fire', startX: targetX, startY: -20, speed: 2.0 + Math.random()*0.8, createdAt: now() };
+    await push(spawnsRef(state.room), fireSpawn);
+  }, FIRE_WARNING_MS);
 }
 
-/* ---------- AWARD SCORE ---------- */
+/* ---------- choose random floor ---------- */
+function chooseRandomFloorForBarrel(){ return Math.floor(1 + Math.random()*9); }
+
+/* ---------- Listening to room ---------- */
+let unsubPlayers = null, unsubSpawns = null, unsubChat = null, unsubScores = null, unsubMeta = null;
+function listenRoom(room){
+  unsubPlayers = onValue(playersRef(room), snap => { state.players = snap.val() || {}; renderPlayersList(); renderScoreboard(); countLabel.textContent = Object.keys(state.players || {}).length; });
+  unsubSpawns = onValue(spawnsRef(room), snap => { state.hazards = snap.val() || {}; });
+  unsubChat = onValue(chatRef(room), snap => { renderChat(snap.val() || {}); });
+  unsubScores = onValue(scoresRef(room), snap => { state.scores = snap.val() || {}; renderScoreboard(); });
+  unsubMeta = onValue(metaRef(room), snap => {
+    const m = snap.val() || {};
+    if(m.host !== localId && state.isHost){ state.isHost = false; stopHostTasks(); }
+    if(m.host === localId && !state.isHost){ state.isHost = true; startHostTasks(); }
+    state.elevators = m.elevators || {}; state.ladderPhaseStart = m.ladderPhaseStart || m.hostAt || null;
+  });
+}
+
+/* ---------- Cleanup ---------- */
+function cleanupListeners(){ if(state.room){ off(playersRef(state.room)); off(spawnsRef(state.room)); off(chatRef(state.room)); off(scoresRef(state.room)); off(metaRef(state.room)); } stopHostTasks(); }
+
+/* ---------- Chat ---------- */
+async function sendChat(){ if(!state.room) return; const txt = (chatInput.value || '').trim(); if(!txt) return; const msg = { id: randomId(), userId: localId, user: state.name, txt, ts: now() }; await push(chatRef(state.room), msg); chatInput.value = ''; }
+
+/* ---------- Scoreboard ---------- */
+function renderScoreboard(){
+  const players = state.players || {}; const scores = state.scores || {};
+  const rows = Object.keys(players).map(id => ({ id, name: players[id].name || 'Player', score: (scores[id] && scores[id].score) ? scores[id].score : 0 }));
+  Object.keys(scores || {}).forEach(id => { if(!rows.find(r => r.id === id)) rows.push({ id, name: (scores[id].name || 'Player'), score: scores[id].score || 0 }); });
+  rows.sort((a,b) => (b.score - a.score) || a.name.localeCompare(b.name));
+  scoreboardEl.innerHTML = rows.map(r => `<div class="row"><div>${escapeHtml(r.name)}</div><div>${r.score}</div></div>`).join('');
+}
+function renderPlayersList(){ const players = state.players || {}; playersListEl.innerHTML = Object.keys(players).map(id => { const p = players[id]; const label = id === localId ? ' (You)' : ''; return `<div><strong>${escapeHtml(p.name)}</strong>${label} - floor:${p.floor || 1}</div>`; }).join(''); }
+function renderChat(data){ const arr = Object.values(data || {}).sort((a,b) => (a.ts||0) - (b.ts||0)); messagesEl.innerHTML = arr.map(m => `<div class="msg"><span class="who">${escapeHtml(m.user)}</span>: ${escapeHtml(m.txt)}</div>`).join(''); messagesEl.scrollTop = messagesEl.scrollHeight; }
+
+/* ---------- Award score ---------- */
 async function awardScore(room, playerId, playerName){
-  // atomic-ish: get current scores then update
-  const scRef = ref(db, scoresRefPath(room));
+  const scRef = scoresRef(room);
   const snap = await new Promise(res => onValue(scRef, s => res(s), {onlyOnce:true}));
   const all = snap.val() || {};
   const prev = all[playerId] && all[playerId].score ? all[playerId].score : 0;
-  const updateObj = {}; updateObj[playerId] = { name: playerName, score: prev + 1 };
-  await update(scRef, updateObj);
+  const updates = {}; updates[`${playerId}`] = { name: playerName, score: prev + 1 };
+  await update(scRef, updates);
 }
 
-/* ---------- RESET ---------- */
+/* ---------- Reset ---------- */
 async function resetScoresAndMap(){
-  if(!state.room) return;
-  if(!confirm('Reset scores and restart map?')) return;
-  // clear scores & spawns; reset meta elevators to regenerate positions next round (host only)
-  await set(ref(db, scoresRefPath(state.room)), {});
-  await set(ref(db, spawnsRefPath(state.room)), null);
-  if(state.isHost){
-    // reset meta elevators so host will recreate them
-    await update(ref(db, metaRefPath(state.room)), { elevators: null, ladderPhaseStart: now() });
-  }
-  // respawn players server-side
-  const playersSnap = await new Promise(res => onValue(ref(db, playersRefPath(state.room)), s => res(s), {onlyOnce:true}));
-  const playersObj = playersSnap.val() || {};
-  const updates = {};
-  Object.keys(playersObj).forEach(id => {
-    updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2;
-    updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H;
-    updates[`rooms/${state.room}/players/${id}/vx`] = 0;
-    updates[`rooms/${state.room}/players/${id}/vy`] = 0;
-    updates[`rooms/${state.room}/players/${id}/floor`] = 1;
-  });
+  if(!state.room) return; if(!confirm('Reset all scores and restart map?')) return;
+  await set(scoresRef(state.room), {}); await set(spawnsRef(state.room), null);
+  const playersSnap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true}));
+  const playersObj = playersSnap.val() || {}; const updates = {};
+  Object.keys(playersObj).forEach(id => { updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2; updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H; updates[`rooms/${state.room}/players/${id}/vx`] = 0; updates[`rooms/${state.room}/players/${id}/vy`] = 0; updates[`rooms/${state.room}/players/${id}/floor`] = 1; });
   if(Object.keys(updates).length) await update(ref(db), updates);
+  if(state.isHost){ await update(metaRef(state.room), { elevators: null, ladderPhaseStart: now() }); } else { await set(spawnsRef(state.room), null); }
+  state.hazards = {}; renderScoreboard();
 }
 
-/* ---------- HAZARD SIMULATION HELPERS ---------- */
-/*
- spawn object shape:
- { id, type: 'barrel' | 'fire_warning' | 'fire', ... fields..., createdAt, expireAt }
-*/
-
-function simulateBarrelPosition(spawn, tms){
-  // spawn.dir: 'left' meaning started left and moves right
+/* ---------- Hazard simulation ---------- */
+function simulateHazardPosition(spawn, tms){
   if(!spawn) return null;
-  const elapsedSec = Math.max(0, tms / 1000);
-  const baseSpeed = spawn.speed || BARREL_BASE_SPEED;
-  const pxPerSec = baseSpeed * 60;
-  const dirSign = spawn.dir === 'left' ? 1 : -1;
-  const x = spawn.startX + dirSign * pxPerSec * elapsedSec;
-  const y = floorY(spawn.floor) - 2;
-  return { x, y, floor: spawn.floor };
-}
-
-function simulateFirePosition(spawn, tms){
-  const elapsedFrames = Math.max(0, tms / 16); // approximate frames
-  const speed = spawn.speed || 2.0;
-  const y = spawn.startY + speed * elapsedFrames;
-  const x = spawn.startX;
-  return { x, y };
-}
-
-function simulateSpawn(spawn, tNow){
-  const tms = tNow - (spawn.createdAt || 0);
   if(spawn.type === 'barrel'){
-    return Object.assign({ type:'barrel' }, simulateBarrelPosition(spawn, tms));
+    const basePxPerFrame = spawn.speed || BARREL_BASE_SPEED;
+    const dir = spawn.dir === 'left' ? 1 : -1;
+    const pxPerSec = basePxPerFrame * 60;
+    const elapsed = Math.max(0, tms / 1000);
+    let x = spawn.startX + dir * (pxPerSec * elapsed);
+    const y = floorY(spawn.floor) - 2;
+    return { x, y, floor: spawn.floor, id: spawn.id, type:'barrel' };
   } else if(spawn.type === 'fire'){
-    return Object.assign({ type:'fire' }, simulateFirePosition(spawn, tms));
+    const speed = spawn.speed || 2.0;
+    const y = spawn.startY + speed * (tms / 16);
+    const x = spawn.startX;
+    return { x, y, id: spawn.id, type:'fire' };
   } else if(spawn.type === 'fire_warning'){
-    // warnings sit near top: we'll position them at y=24 (visual)
-    return { type:'fire_warning', x: spawn.startX, y: 24, createdAt: spawn.createdAt, warningMs: spawn.warningMs || FIRE_WARNING_MS, id: spawn.id };
+    // warning doesn't move; draw "!" at top area
+    return { x: spawn.startX, y: 24, id: spawn.id, type:'fire_warning', warningMs: spawn.warningMs || FIRE_WARNING_MS, createdAt: spawn.createdAt };
   }
   return null;
 }
 
-/* ---------- COLLISION CHECKS ---------- */
-function rectOverlap(a,b){
-  return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
-}
-function checkCollisions(tNow){
-  // check local player vs spawns
-  const spawnsObj = state.spawns || {};
-  for(const k in spawnsObj){
-    const sp = spawnsObj[k];
-    if(!sp) continue;
-    const sim = simulateSpawn(sp, tNow);
-    if(!sim) continue;
-    if(sim.type === 'barrel'){
-      // bounding box
-      const hb = { x: sim.x - 8, y: sim.y - 6, w: 16, h: 12 };
-      const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
-      if(rectOverlap(hb, pb)){
-        handleDeath(localId, 'barrel');
-        return;
-      }
-    } else if(sim.type === 'fire'){
-      const hb = { x: sim.x - 12, y: sim.y - 12, w: 24, h: 24 };
-      const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
-      if(rectOverlap(hb, pb)){
-        handleDeath(localId, 'fire');
-        return;
-      }
-    } else if(sim.type === 'fire_warning'){
-      // warnings don't hurt; just display
-    }
-  }
-}
-
-/* ---------- POSITION WRITE (rate-limited) ---------- */
-let lastPosWrite = 0;
-async function writeLocalPositionIfDue(tNow){
-  if(!state.room) return;
-  if(tNow - lastPosWrite < POSITION_WRITE_MS) return;
-  lastPosWrite = tNow;
-  const upd = {};
-  upd[`rooms/${state.room}/players/${localId}/x`] = localPlayer.x;
-  upd[`rooms/${state.room}/players/${localId}/y`] = localPlayer.y;
-  upd[`rooms/${state.room}/players/${localId}/vx`] = localPlayer.vx;
-  upd[`rooms/${state.room}/players/${localId}/vy`] = localPlayer.vy;
-  upd[`rooms/${state.room}/players/${localId}/floor`] = localPlayer.floor;
-  try { await update(ref(db), upd); } catch(e){ console.warn('pos update err', e); }
-}
-
-/* ---------- DEATH / RESPAWN ---------- */
-async function handleDeath(playerId, cause){
-  if(playerId === localId){
-    // local respawn
-    localPlayer.respawn();
-    // inform DB
-    if(state.room){
-      const updates = {};
-      updates[`rooms/${state.room}/players/${localId}/x`] = localPlayer.x;
-      updates[`rooms/${state.room}/players/${localId}/y`] = localPlayer.y;
-      updates[`rooms/${state.room}/players/${localId}/vx`] = 0;
-      updates[`rooms/${state.room}/players/${localId}/vy`] = 0;
-      updates[`rooms/${state.room}/players/${localId}/floor`] = 1;
-      try{ await update(ref(db), updates); } catch(e){ console.warn('respawn update err', e); }
-    }
-  } else {
-    // remote player's death; host or DB snapshot will handle respawn/cleanup
-  }
-}
-
-/* ---------- WIN ---------- */
-async function onWin(playerId, playerName){
-  showModal(`${escapeHtml(playerName)} reached the top!`, 1600);
-  // award score
-  if(state.room){
-    await awardScore(state.room, playerId, playerName);
-  }
-  // host clears spawns and respawns players after short delay
-  if(state.isHost){
-    setTimeout(async () => {
-      await set(ref(db, spawnsRefPath(state.room)), null);
-      await respawnAllPlayersToStart();
-      // reset elevator meta so new round randomizes sides
-      await update(ref(db, metaRefPath(state.room)), { elevators: null, ladderPhaseStart: now() });
-    }, 1100);
-  }
-}
-
-/* ---------- RESPAWN ALL (host) ---------- */
-async function respawnAllPlayersToStart(){
-  if(!state.room) return;
-  const playersSnap = await new Promise(res => onValue(ref(db, playersRefPath(state.room)), s => res(s), {onlyOnce:true}));
-  const playersObj = playersSnap.val() || {};
-  const updates = {};
-  Object.keys(playersObj).forEach(id => {
-    updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2;
-    updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H;
-    updates[`rooms/${state.room}/players/${id}/vx`] = 0;
-    updates[`rooms/${state.room}/players/${id}/vy`] = 0;
-    updates[`rooms/${state.room}/players/${id}/floor`] = 1;
-  });
-  if(Object.keys(updates).length) await update(ref(db), updates);
-}
-
-/* ---------- MAIN SIM LOOP ---------- */
-let raf = null;
-let lastSim = now();
-function startLoop(){ if(raf) return; canvas.focus(); lastSim = now(); raf = requestAnimationFrame(loop); }
-function stopLoop(){ if(raf){ cancelAnimationFrame(raf); raf = null; } }
-function loop(){
-  const tNow = now();
-  const dt = (tNow - lastSim) / 16.666; // frame-equivalent
-  lastSim = tNow;
-
-  // step local physics
-  stepLocal(dt, tNow);
-
-  // simulate spawns display & collisions
-  checkCollisions(tNow);
-
-  // render
-  renderAll(tNow);
-
-  // write pos occasionally
-  writeLocalPositionIfDue(tNow);
-
-  raf = requestAnimationFrame(loop);
-}
-
-/* ---------- STEP LOCAL PHYSICS ---------- */
-function stepLocal(dt, tNow){
-  if(!state.isJoined) return;
-  const p = localPlayer;
-
-  // input
-  let intendedVx = 0;
-  if(keys.left) { intendedVx = -MOVE_SPEED; p.facing = 'left'; }
-  if(keys.right){ intendedVx = MOVE_SPEED; p.facing = 'right'; }
-
-  // ladder detection
-  const curFloor = p.floor;
-  const ladderX = ladderXForFloor(curFloor);
-  const nearLadder = Math.abs((p.x + p.width/2) - ladderX) < LADDER_X_OFFSET;
-
-  // ladder trap: meta.ladderPhaseStart determines cycle
-  let ladderDanger = false;
-  if(state.meta && state.meta.ladderPhaseStart){
-    const elapsed = (tNow - (state.meta.ladderPhaseStart || 0)) % LADDER_TRAP_PERIOD;
-    ladderDanger = elapsed >= LADDER_SAFE_MS; // last phase is dangerous
-  }
-
-  // if ladder trap is active and player touches ladder on trap floors (6 & 9) -> die
-  if((curFloor === 6 || curFloor === 9) && nearLadder && ladderDanger){
-    // check overlap in vertical zone
-    const ladderTop = floorY(curFloor) - 80;
-    const ladderBottom = floorY(curFloor) + PLAYER_H;
-    if(p.y >= ladderTop - 2 && p.y <= ladderBottom + 2){
-      handleDeath(localId, 'ladder_trap');
-      return;
-    }
-  }
-
-  // elevator detection: simulate elevator positions and see if player stands on top
-  const elevatorDefs = (state.meta && state.meta.elevators) ? Object.values(state.meta.elevators) : [];
-  const clientElevators = elevatorDefs.map(e => simulateElevatorClient(e, tNow));
-
-  // check if player is standing on elevator top (approx)
-  let standingOnElevator = null;
-  for(const ev of clientElevators){
-    if(!ev) continue;
-    const evTop = ev.y - PLAYER_H;
-    if(p.y + p.height >= ev.y - 2 && p.y + p.height <= ev.y + 8){
-      if((p.x + p.width > ev.x) && (p.x < ev.x + ev.width)){
-        standingOnElevator = ev; break;
-      }
-    }
-  }
-
-  // climbing
-  if(keys.climb && nearLadder){
-    p.onLadder = true; p.vx = 0; p.vy = 0;
-    p.y -= 3.0 * dt;
-    const nextFloorTopY = floorY(curFloor + 1) - PLAYER_H;
-    if(p.y <= nextFloorTopY){
-      p.floor = Math.min(FLOOR_COUNT, curFloor + 1);
-      p.y = nextFloorTopY; p.onLadder = false; p.onGround = true;
-    } else {
-      p.onGround = false;
-    }
-  } else {
-    p.onLadder = false;
-    // jump
-    if(keys.jump && p.onGround){
-      p.vy = JUMP_V; p.onGround = false;
-    }
-    // horizontal
-    p.vx = intendedVx;
-    // gravity
-    p.vy += GRAVITY * dt;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-  }
-
-  // clamp x
-  p.x = clamp(p.x, 0, CANVAS_W - p.width);
-
-  // ground-snap
-  const surfaceY = floorY(p.floor) - PLAYER_H;
-  if(!p.onLadder){
-    if(p.y >= surfaceY){
-      // check gap
-      if(floorHasGap(p.floor) && !isOnPlatformX(p.floor, p.x + p.width/2)){
-        // fall through gap -> death
-        handleDeath(localId, 'fall');
-        return;
-      } else {
-        if(standingOnElevator){
-          // player rides elevator (vertical follow) but can still move horizontally
-          p.y = standingOnElevator.y - PLAYER_H;
-          p.vy = 0; p.onGround = true;
-        } else {
-          p.y = surfaceY; p.vy = 0; p.onGround = true;
-        }
-      }
-    } else {
-      p.onGround = false;
-    }
-  }
-
-  // simple player pushback collisions (prevent overlapping)
-  const playersDb = state.players || {};
-  Object.keys(playersDb).forEach(id => {
-    if(id === localId) return;
-    const q = playersDb[id];
-    if(!q) return;
-    const ob = { x: q.x || 0, y: q.y || 0, w: PLAYER_W, h: PLAYER_H };
-    const pb = { x: p.x, y: p.y, w: p.width, h: p.height };
-    if(rectOverlap(pb, ob)){
-      if(p.vx > 0) p.x = ob.x - p.width - 1;
-      if(p.vx < 0) p.x = ob.x + ob.w + 1;
-    }
-  });
-
-  // win check
-  if(p.floor >= FLOOR_COUNT){
-    onWin(localId, localPlayer.name);
-  }
-}
-
-/* ---------- CLIENT: simulate elevator position (same formula host uses) ---------- */
-function simulateElevatorClient(elev, tNow){
+/* ---------- Elevator simulation ---------- */
+function simulateElevator(elev, tNow){
   if(!elev) return null;
   const created = elev.createdAt || 0;
   const elapsed = (tNow - created) % ELEVATOR_CYCLE_MS;
-  const fA = elev.floorA, fB = elev.floorB;
+  const fA = elev.floorA; const fB = elev.floorB;
   const band = CANVAS_H / FLOOR_COUNT;
   const surfaceA = floorY(fA) - PLAYER_H;
   const surfaceB = floorY(fB) - PLAYER_H;
@@ -871,130 +515,232 @@ function simulateElevatorClient(elev, tNow){
   let y = lowerY;
   if(elapsed < moveMs){
     const p = elapsed / moveMs; y = lowerY + (upperY - lowerY) * p;
-  } else if(elapsed < moveMs + pauseMs){
-    y = upperY;
+  } else if(elapsed < moveMs + pauseMs){ y = upperY;
   } else if(elapsed < moveMs + pauseMs + moveMs){
     const p = (elapsed - moveMs - pauseMs) / moveMs; y = upperY + (lowerY - upperY) * p;
   } else { y = lowerY; }
   const side = elev.side || 'left';
-  const x = side === 'left' ? ELEVATOR_SIDE_MARGIN : (CANVAS_W - ELEVATOR_SIDE_MARGIN - (elev.width || ELEVATOR_WIDTH));
-  return { id: elev.id, x, y, width: elev.width || ELEVATOR_WIDTH, floorA: elev.floorA, floorB: elev.floorB, side: elev.side };
+  const x = (side === 'left') ? ELEVATOR_SIDE_MARGIN : (CANVAS_W - ELEVATOR_SIDE_MARGIN - (elev.width || ELEVATOR_WIDTH));
+  return { id: elev.id, x, y, width: elev.width || ELEVATOR_WIDTH, floorA: fA, floorB: fB, side };
 }
 
-/* ---------- RENDER ---------- */
-function renderAll(tNow){
-  // clear
-  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+/* ---------- Collision helpers ---------- */
+function rectsOverlap(a,b){ return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y); }
 
-  // floors + gaps + ladders
-  for(let f=1; f<=FLOOR_COUNT; f++){
-    const y = floorY(f);
-    ctx.fillStyle = floorHasGap(f) ? '#e6edf3' : '#dcebf8';
-    ctx.fillRect(0, y + PLAYER_H, CANVAS_W, 6);
+/* ---------- Main loop ---------- */
+let lastSim = now();
+let lastWrite = 0;
+const WRITE_RATE = 120;
+function startLoop(){ if(raf) return; canvas.focus(); lastSim = now(); raf = requestAnimationFrame(loop); }
+function stopLoop(){ if(raf){ cancelAnimationFrame(raf); raf = null; } }
+function loop(){ const t = now(); const dt = (t - lastSim) / 16.666; lastSim = t; stepLocal(dt, t); renderAll(t); raf = requestAnimationFrame(loop); }
 
-    if(floorHasGap(f)){
-      const g = floorGapRange(f);
-      ctx.clearRect(g[0], y + PLAYER_H, g[1] - g[0], 20);
-      ctx.strokeStyle = '#cbd7e6'; ctx.setLineDash([4,4]); ctx.beginPath();
-      ctx.moveTo(g[0], y + PLAYER_H); ctx.lineTo(g[0], y + PLAYER_H - 12);
-      ctx.moveTo(g[1], y + PLAYER_H); ctx.lineTo(g[1], y + PLAYER_H - 12);
-      ctx.stroke(); ctx.setLineDash([]);
-    }
+/* ---------- Player step ---------- */
+function stepLocal(dt, tNow){
+  if(!state.isJoined) return;
+  const p = localPlayer;
+  const dbPlayers = state.players || {};
+  if(dbPlayers[localId]){ const dp = dbPlayers[localId]; p.x = dp.x; p.y = dp.y; p.floor = dp.floor || p.floor; }
 
-    // ladder (with trap color if applicable)
-    const lx = ladderXForFloor(f);
-    let ladderColor = '#bcd6f7';
-    if((f === 6 || f === 9) && state.meta && state.meta.ladderPhaseStart){
-      const elapsed = (tNow - state.meta.ladderPhaseStart) % LADDER_TRAP_PERIOD;
-      if(elapsed >= LADDER_SAFE_MS) ladderColor = '#e74c3c';
-    }
-    ctx.fillStyle = ladderColor;
-    ctx.fillRect(lx - 10, y - 80 + PLAYER_H, 20, 80);
-    ctx.strokeStyle = ladderColor === '#e74c3c' ? '#ffb3b3' : '#9fbfe6';
-    for(let r = 0; r < 8; r++){
-      const ry = y - (r * 10);
-      ctx.beginPath(); ctx.moveTo(lx - 10, ry); ctx.lineTo(lx + 10, ry); ctx.stroke();
-    }
+  let intendedVx = 0;
+  if(keys.left) { intendedVx = -MOVE_SPEED; p.facing='left'; }
+  if(keys.right){ intendedVx = MOVE_SPEED; p.facing='right'; }
+
+  const currentFloor = p.floor;
+  const ladderXCoord = ladderXForFloor(currentFloor);
+  const nearLadder = Math.abs((p.x + p.width/2) - ladderXCoord) < LADDER_X_OFFSET;
+
+  const ladderPhaseStart = state.ladderPhaseStart || 0;
+  let ladderDanger = false;
+  if(ladderPhaseStart){
+    const elapsed = (tNow - ladderPhaseStart) % LADDER_TRAP_PERIOD;
+    ladderDanger = elapsed >= LADDER_SAFE_MS;
+  }
+  if((currentFloor === 6 || currentFloor === 9) && nearLadder && ladderDanger){
+    const ladderTop = floorY(currentFloor) - 80;
+    const ladderBottom = floorY(currentFloor) + PLAYER_H;
+    if(p.y >= ladderTop - 2 && p.y <= ladderBottom + 2){ handleDeath(localId, 'ladder_electric'); return; }
   }
 
-  // elevators (from meta)
-  const elevatorDefs = (state.meta && state.meta.elevators) ? Object.values(state.meta.elevators) : [];
-  elevatorDefs.forEach(e => {
-    const pos = simulateElevatorClient(e, tNow);
+  const elevatorDefs = state.elevators || {};
+  const elevatorList = Object.values(elevatorDefs);
+  const simulatedElevators = elevatorList.map(e => simulateElevator(e, tNow));
+
+  let onSomeElevator = null;
+  for(const ev of simulatedElevators){ if(!ev) continue; if(p.y + p.height >= ev.y - 2 && p.y + p.height <= ev.y + 8){ if( (p.x + p.width > ev.x) && (p.x < ev.x + ev.width) ){ onSomeElevator = ev; break; } } }
+
+  if(keys.climb && nearLadder){
+    p.onLadder = true; p.vx = 0; p.vy = 0; p.y -= 3.0 * dt;
+    const nextFloorTopY = floorY(currentFloor + 1) - PLAYER_H;
+    if(p.y <= nextFloorTopY){ p.floor = Math.min(FLOOR_COUNT, currentFloor + 1); p.y = nextFloorTopY; p.onLadder = false; p.onGround = true; } else { p.onGround = false; }
+  } else {
+    p.onLadder = false;
+    if(keys.jump && p.onGround){ p.vy = JUMP_V; p.onGround = false; }
+    p.vx = intendedVx;
+    p.vy += GRAVITY * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+
+  if(p.x < 0) p.x = 0;
+  if(p.x > CANVAS_W - p.width) p.x = CANVAS_W - p.width;
+
+  const surfaceY = floorY(p.floor) - PLAYER_H;
+  if(!p.onLadder){
+    if(p.y >= surfaceY){
+      if(floorHasGap(p.floor) && !isOnPlatformX(p.floor, p.x + p.width/2)){ handleDeath(localId, 'fall'); return; }
+      else {
+        if(onSomeElevator){ p.y = onSomeElevator.y - PLAYER_H; p.vy = 0; p.onGround = true; } else { p.y = surfaceY; p.vy = 0; p.onGround = true; }
+      }
+    } else { p.onGround = false; }
+  }
+
+  Object.keys(state.players || {}).forEach(id => { if(id === localId) return; const op = state.players[id]; if(!op) return; const ob = { x: op.x || 0, y: op.y || 0, w: PLAYER_W, h: PLAYER_H }; const pb = { x: p.x, y: p.y, w: p.width, h: p.height }; if(rectsOverlap(pb, ob)){ if(p.vx > 0) p.x = ob.x - p.width - 1; if(p.vx < 0) p.x = ob.x + ob.w + 1; } });
+
+  checkHazardCollisions(tNow);
+
+  if(p.floor >= FLOOR_COUNT){
+    onWin(localId, localPlayer.name);
+    awardScore(state.room, localId, localPlayer.name);
+    if(state.isHost){ showModal(`${escapeHtml(localPlayer.name)} reached the top!`, 2000); setTimeout(async ()=> { await set(spawnsRef(state.room), null); await respawnAllPlayersToStart(); }, 1200); }
+  }
+
+  if(tNow - lastWrite > WRITE_RATE){
+    lastWrite = tNow; if(state.room){ const upd = {}; upd[`rooms/${state.room}/players/${localId}/x`] = p.x; upd[`rooms/${state.room}/players/${localId}/y`] = p.y; upd[`rooms/${state.room}/players/${localId}/vx`] = p.vx; upd[`rooms/${state.room}/players/${localId}/vy`] = p.vy; upd[`rooms/${state.room}/players/${localId}/floor`] = p.floor; update(ref(db), upd).catch(e=>console.warn('update pos err',e)); }
+  }
+}
+
+/* ---------- Respawn all (host) ---------- */
+async function respawnAllPlayersToStart(){ if(!state.room) return; const snap = await new Promise(res => onValue(playersRef(state.room), s => res(s), {onlyOnce:true})); const pl = snap.val() || {}; const updates = {}; Object.keys(pl).forEach(id => { updates[`rooms/${state.room}/players/${id}/x`] = CANVAS_W/2; updates[`rooms/${state.room}/players/${id}/y`] = floorY(1) - PLAYER_H; updates[`rooms/${state.room}/players/${id}/vx`] = 0; updates[`rooms/${state.room}/players/${id}/vy`] = 0; updates[`rooms/${state.room}/players/${id}/floor`] = 1; }); if(Object.keys(updates).length) await update(ref(db), updates); }
+
+/* ---------- Death ---------- */
+async function handleDeath(playerId, cause){
+  if(playerId === localId){
+    localPlayer.respawn();
+    if(state.room){
+      await update(ref(db), {
+        [`rooms/${state.room}/players/${localId}/x`]: localPlayer.x,
+        [`rooms/${state.room}/players/${localId}/y`]: localPlayer.y,
+        [`rooms/${state.room}/players/${localId}/vx`]: 0,
+        [`rooms/${state.room}/players/${localId}/vy`]: 0,
+        [`rooms/${state.room}/players/${localId}/floor`]: 1
+      }).catch(e=>console.warn(e));
+    }
+  }
+}
+
+/* ---------- Hazards collision ---------- */
+function checkHazardCollisions(tNow){
+  const hazards = state.hazards || {};
+  for(const k in hazards){
+    const spawn = hazards[k];
+    const tms = tNow - (spawn.createdAt || 0);
+    if(tms < 0) continue;
+    const pos = simulateHazardPosition(spawn, tms);
+    if(!pos) continue;
+    if(pos.type === 'barrel'){
+      if(pos.x < -30 || pos.x > CANVAS_W + 30) continue;
+      const hb = { x: pos.x - 8, y: pos.y - 6, w: 16, h: 12 };
+      const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
+      if(rectsOverlap(hb, pb)){ handleDeath(localId, 'barrel'); return; }
+    } else if(pos.type === 'fire'){
+      // fire area ~24x24
+      const hb = { x: pos.x - 12, y: pos.y - 12, w: 24, h: 24 };
+      const pb = { x: localPlayer.x, y: localPlayer.y, w: localPlayer.width, h: localPlayer.height };
+      if(rectsOverlap(hb, pb)){ handleDeath(localId, 'fire'); return; }
+    } else if(pos.type === 'fire_warning'){
+      // warnings don't hurt
+    }
+  }
+}
+
+/* ---------- On win ---------- */
+function onWin(id,name){ showModal(`${escapeHtml(name)} reached the top!`, 1600); }
+
+/* ---------- Render ---------- */
+function renderAll(tNow){
+  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+  for(let f=1; f<=FLOOR_COUNT; f++){
+    const y = floorY(f);
+    ctx.fillStyle = (floorHasGap(f) ? '#e6edf3' : '#dcebf8');
+    ctx.fillRect(0, y+PLAYER_H, CANVAS_W, 6);
+    if(floorHasGap(f)){
+      const g = floorGapRange(f);
+      ctx.clearRect(g[0], y+PLAYER_H, g[1]-g[0], 20);
+      ctx.strokeStyle = '#cbd7e6'; ctx.lineWidth = 1; ctx.beginPath(); ctx.setLineDash([4,4]);
+      ctx.moveTo(g[0], y+PLAYER_H); ctx.lineTo(g[0], y+PLAYER_H - 12);
+      ctx.moveTo(g[1], y+PLAYER_H); ctx.lineTo(g[1], y+PLAYER_H - 12);
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    const lx = ladderXForFloor(f);
+    let ladderColor = '#bcd6f7';
+    if((f === 6 || f === 9) && state.ladderPhaseStart){
+      const elapsed = (tNow - state.ladderPhaseStart) % LADDER_TRAP_PERIOD;
+      if(elapsed >= LADDER_SAFE_MS) ladderColor = '#e74c3c';
+    }
+    ctx.fillStyle = ladderColor; ctx.fillRect(lx-10, y-80+PLAYER_H, 20, 80);
+    ctx.strokeStyle = ladderColor === '#e74c3c' ? '#ffb3b3' : '#9fbfe6';
+    for(let r=0;r<8;r++){ const ry = y - (r*10); ctx.beginPath(); ctx.moveTo(lx-10, ry); ctx.lineTo(lx+10, ry); ctx.stroke(); }
+  }
+
+  // elevators
+  const elevDefs = state.elevators || {};
+  const nowTime = tNow;
+  const simulatedElevators = [];
+  Object.values(elevDefs).forEach(e => {
+    const pos = simulateElevator(e, nowTime);
     if(!pos) return;
-    ctx.fillStyle = '#d9edf8';
-    ctx.fillRect(pos.x, pos.y - 6, pos.width, 12);
+    simulatedElevators.push(pos);
+    ctx.fillStyle = '#d9edf8'; ctx.fillRect(pos.x, pos.y - 6, pos.width, 12);
     ctx.strokeStyle = '#9fc7df'; ctx.strokeRect(pos.x, pos.y - 6, pos.width, 12);
   });
 
-  // hazards: iterate spawns and render according to type and phase
-  const spawns = state.spawns || {};
-  const nowTs = tNow;
-  Object.keys(spawns).forEach(k => {
-    const sp = spawns[k];
-    if(!sp) return;
-    const sim = simulateSpawn(sp, nowTs);
-    if(!sim) return;
-    if(sim.type === 'barrel'){
-      // skip if off-screen
-      if(sim.x < -40 || sim.x > CANVAS_W + 40) return;
-      ctx.fillStyle = '#f39c12'; ctx.fillRect(sim.x - 8, sim.y - 6, 16, 12);
-      ctx.strokeStyle = '#b05b00'; ctx.strokeRect(sim.x - 8, sim.y - 6, 16, 12);
-    } else if(sim.type === 'fire'){
-      ctx.fillStyle = '#e74c3c';
-      ctx.beginPath(); ctx.arc(sim.x, sim.y, 10, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ff9f43'; ctx.beginPath(); ctx.arc(sim.x, sim.y, 6, 0, Math.PI * 2); ctx.fill();
-    } else if(sim.type === 'fire_warning'){
-      const elapsed = nowTs - (sp.createdAt || 0);
-      if(elapsed < (sp.warningMs || FIRE_WARNING_MS)){
-        // pulsing ! symbol
-        const alpha = 0.5 + 0.5 * Math.abs(Math.sin(nowTs / 180));
+  // hazards: warnings, barrels, fires
+  const hazards = state.hazards || {};
+  for(const k in hazards){
+    const spawn = hazards[k];
+    const tms = nowTime - (spawn.createdAt || 0);
+    if(tms < 0) continue;
+    const pos = simulateHazardPosition(spawn, tms);
+    if(!pos) continue;
+    if(pos.type === 'barrel'){
+      if(pos.x < -30 || pos.x > CANVAS_W + 30) continue;
+      ctx.fillStyle = '#f39c12'; ctx.fillRect(pos.x-8, pos.y-6, 16, 12);
+      ctx.strokeStyle = '#b05b00'; ctx.strokeRect(pos.x-8,pos.y-6,16,12);
+    } else if(pos.type === 'fire'){
+      ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(pos.x, pos.y, 10, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#ff9f43'; ctx.beginPath(); ctx.arc(pos.x, pos.y, 6, 0, Math.PI*2); ctx.fill();
+    } else if(pos.type === 'fire_warning'){
+      const elapsed = nowTime - (spawn.createdAt || 0);
+      if(elapsed < (spawn.warningMs || FIRE_WARNING_MS)){
+        // draw pulsing "!" mark
+        const alpha = 0.6 + 0.4 * Math.sin(nowTime/120);
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#ffcf4b'; ctx.beginPath(); ctx.arc(sim.x, sim.y, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffcf4b';
+        ctx.beginPath(); ctx.arc(pos.x, 24, 10, 0, Math.PI*2); ctx.fill();
         ctx.globalAlpha = 1.0;
-        ctx.fillStyle = '#a33'; ctx.font = 'bold 14px Inter, Arial'; ctx.textAlign = 'center'; ctx.fillText('!', sim.x, sim.y + 4);
+        ctx.fillStyle = '#a33'; ctx.font = 'bold 14px Inter, Arial'; ctx.textAlign = 'center'; ctx.fillText('!', pos.x, 28);
       }
     }
-  });
+  }
 
   // players
   const players = state.players || {};
-  // sync local player's coordinates lightly from DB to avoid divergence
-  if(players[localId]){
-    const pdb = players[localId];
-    // minor corrections (avoid heavy rubberband)
-    if(Math.abs(pdb.x - localPlayer.x) > 40) localPlayer.x = pdb.x;
-    if(Math.abs(pdb.y - localPlayer.y) > 40) localPlayer.y = pdb.y;
-    localPlayer.floor = pdb.floor || localPlayer.floor;
-  }
+  if(players[localId]){ const p = players[localId]; localPlayer.x = p.x; localPlayer.y = p.y; localPlayer.floor = p.floor || localPlayer.floor; }
   Object.keys(players).forEach(id => {
-    const p = players[id];
-    if(!p) return;
-    const x = p.x || CANVAS_W/2;
-    const y = p.y || floorY(1) - PLAYER_H;
+    const p = players[id]; if(!p) return;
+    const x = p.x || CANVAS_W/2; const y = p.y || floorY(1) - PLAYER_H;
     ctx.fillStyle = id === localId ? '#2b7cff' : '#495a64';
     ctx.fillRect(x, y, PLAYER_W, PLAYER_H);
     ctx.fillStyle = '#14222b'; ctx.font = '10px Inter, Arial'; ctx.fillText(p.name || 'P', x - 6, y - 6);
   });
 }
 
-/* ---------- UTILS: modal ---------- */
-function showModal(text, ms = 1600){
-  modalHost.innerHTML = `<div class="overlay"><div class="modal">${text}</div></div>`;
-  setTimeout(()=> { modalHost.innerHTML = ''; }, ms);
-}
+/* ---------- Utility modals ---------- */
+function showModal(text, ms = 1600){ modalHost.innerHTML = `<div class="overlay"><div class="modal"><div style="font-weight:700">${text}</div></div></div>`; setTimeout(()=>{ modalHost.innerHTML = ''; }, ms); }
 
-/* ---------- INITIAL DRAW ---------- */
-(function init(){
-  ctx.fillStyle = '#eef6ff'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
-  ctx.fillStyle = '#9fbfe6'; ctx.fillRect(0, floorY(1), CANVAS_W, 6);
-})();
-
-/* ---------- LISTENER ATTACHMENTS INVOLVING DB ---------- */
-/* set up onValue handlers in listenRoom above (already wired) */
-
-/* ---------- UTILS/EXTRAS ---------- */
-/* If host leaves, next joining player will claim host (transaction) */
+/* ---------- Initial ---------- */
+(function init(){ ctx.fillStyle = '#eef6ff'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H); ctx.fillStyle = '#9fbfe6'; ctx.fillRect(0, floorY(1), CANVAS_W, 6); })();
 
 </script>
 </body>
