@@ -662,7 +662,7 @@ function simulateHazardPosition(spawn, t){
       const extra = (BARREL_KICK_MULT - 1) * pxPerSec * ((t - spawn.kickAt) / 1000);
       x = spawn.startX + dir * (pxPerSec * (t / 1000) + extra);
     }
-    const y = spawn.startY + (spawn.floor ? -0.0 : 0); // stays on its floor surface
+    const y = floorY(spawn.floor) - 2; // stays on its floor surface
     return { x, y, floor: spawn.floor, id: spawn.id, type:'barrel' };
   } else if(spawn.type === 'fire'){
     const speed = spawn.speed || 2.8;
