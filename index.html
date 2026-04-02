@@ -271,7 +271,11 @@ const firebaseConfig = {
   apiKey: "AIzaSyDLRVCCETtUBIv_69cWMedH4vbIu-z7nwU",
   authDomain: "mindbattle-f00a3.firebaseapp.com",
   databaseURL: "https://mindbattle-f00a3-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "mindbattle-f00a3"
+  projectId: "mindbattle-f00a3",
+  storageBucket: "mindbattle-f00a3.firebasestorage.app",
+  messagingSenderId: "286675354503",
+  appId: "1:286675354503:web:00a87613f420cd07a30922",
+  measurementId: "G-HC1CZLHZCT"
 };
 const fbApp = initializeApp(firebaseConfig);
 const db = getDatabase(fbApp);
@@ -483,7 +487,6 @@ function overlap(a, b) {
 
 /* ── Physics: step local player ── */
 function stepPlayer(dt) {
-  if (!joined) return;
   const p = local;
   if (p.dead) {
     p.respawnTimer -= dt;
@@ -588,7 +591,7 @@ function die(cause) {
   local.respawnTimer = 90; // frames
   local.vy = -6;
   addMsg(`💀 You died (${cause})`, 'sys');
-  syncLocalPos();
+  if (joined) syncLocalPos();
 }
 
 async function onWin() {
@@ -596,11 +599,15 @@ async function onWin() {
   local.respawnTimer = 150;
   showWin(`${myName} reached floor 10!`);
   addMsg(`🏆 ${myName} reached the top!`, 'sys');
-  if (room) await awardScore(room, localId, myName);
-  if (isHost) {
-    await set(ref(db, `rooms/${room}/spawns`), null);
-    await respawnAll();
+  if (room && joined) {
+    await awardScore(room, localId, myName);
+    if (isHost) {
+      await set(ref(db, `rooms/${room}/spawns`), null);
+      await respawnAll();
+    }
   }
+  // Solo: just respawn locally
+  setTimeout(() => { local.respawn(); }, 2000);
 }
 
 /* ── Hazard simulation ── */
@@ -1162,14 +1169,16 @@ function loop(ts) {
   for (const mp of movingPlatforms) mp.update();
   for (const e of enemies) e.update();
 
+  // Physics always runs
+  stepPlayer(dt);
+  stepHazards(dt);
+  // Physics always runs — movement works with or without a room
+  stepPlayer(dt);
+  stepHazards(dt);
+  // Only sync to Firebase when in a room
   if (joined) {
-    stepPlayer(dt);
-    stepHazards(dt);
     syncTimer++;
     if (syncTimer >= SYNC_EVERY) { syncTimer = 0; syncLocalPos(); }
-  } else {
-    // Demo: idle animation
-    // (just render without joining)
   }
 
   render();
