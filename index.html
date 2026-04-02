@@ -516,6 +516,109 @@ function stepPlayer(dt) {
     return;
   }
 
+  // Find a ladder the player is actually touching
+  let ladderHit = null;
+  for (let f = 1; f < FLOOR_COUNT; f++) {
+    const lx = ladderCenterX(f);
+    const sy = floorSurfaceY(f);
+    const top = sy - FLOOR_H + 10;
+    const bottom = sy + 6;
+
+    const inX = Math.abs(p.cx - lx) < LADDER_W;
+    const inY = p.y + PH > top && p.y < bottom;
+
+    if (inX && inY) {
+      ladderHit = { f, lx, top, bottom };
+      break;
+    }
+  }
+
+  let climbing = false;
+
+  if (ladderHit && (keys.jump || keys.climb)) {
+    climbing = true;
+    p.onLadder = true;
+    p.vx = 0;
+    p.vy = 0;
+
+    const climbSpeed = 2.8 * dt;
+
+    if (keys.jump && !keys.climb) p.y -= climbSpeed;   // up
+    if (keys.climb && !keys.jump) p.y += climbSpeed;   // down
+    if (keys.jump && keys.climb) p.y -= climbSpeed;    // default up
+
+    p.y = Math.max(-PH, Math.min(p.y, CH - PH));
+    p.onGround = false;
+  } else {
+    p.onLadder = false;
+
+    // normal jump
+    if ((keys.jump || keys.jumpalt) && p.onGround) {
+      p.vy = JUMP_V;
+      p.onGround = false;
+    }
+
+    p.vx = 0;
+    if (keys.left)  { p.vx = -MOVE_SPD; p.facingRight = false; }
+    if (keys.right) { p.vx =  MOVE_SPD; p.facingRight = true; }
+
+    p.vy += GRAVITY * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+
+  // Clamp X
+  if (p.x < 0) p.x = 0;
+  if (p.x + PW > CW) p.x = CW - PW;
+
+  // Floor collision only when NOT climbing
+  p.onGround = false;
+  let highestFloor = 0;
+
+  if (!climbing) {
+    for (let f = 1; f <= FLOOR_COUNT; f++) {
+      const sy = floorSurfaceY(f);
+      if (p.vy >= 0 && p.y + PH >= sy && p.y + PH <= sy + 20) {
+        const gap = floorGap(f);
+        const px_center = p.x + PW / 2;
+        if (gap && px_center > gap.x1 && px_center < gap.x2) {
+          // fall through gap
+        } else {
+          p.y = sy - PH;
+          p.vy = 0;
+          p.onGround = true;
+          if (f > highestFloor) highestFloor = f;
+        }
+      }
+    }
+  }
+
+  if (highestFloor > 0) p.floor = highestFloor;
+
+  // Kill if falls off screen bottom
+  if (p.y > CH + 40) { die('fell'); return; }
+
+  // Hazard collisions
+  for (const b of barrels) {
+    if (overlap(p.rect, b.rect)) { die('barrel'); return; }
+  }
+  for (const f of fireballs) {
+    if (overlap(p.rect, f.rect)) { die('fire'); return; }
+  }
+  for (const e of enemies) {
+    if (overlap(p.rect, e.rect)) { die('enemy'); return; }
+  }
+
+  // Win condition
+  if (p.floor >= FLOOR_COUNT && p.y <= floorSurfaceY(FLOOR_COUNT) - PH + 4) {
+    onWin();
+    return;
+  }
+
+  document.getElementById('floorLabel').textContent = p.floor;
+  updateFloorBar(p.floor);
+}
+
   // 1. Better Ladder Detection
   let nearLadder = false;
   let ladderX = 0;
