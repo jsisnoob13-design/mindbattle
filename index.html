@@ -247,10 +247,11 @@ canvas{
   <div class="card" style="margin-top:10px">
     <div class="card-title">DANGER</div>
     <div style="font-size:15px;line-height:1.9;color:var(--muted)">
-      <div>🛢 <span style="color:#f39c12">Barrels</span> roll down floors</div>
-      <div>🔥 <span style="color:var(--danger)">Fire</span> hunts the leader</div>
-      <div>⚡ <span style="color:#aa88ff">Moving platforms</span> shift underfoot</div>
-      <div>👹 <span style="color:#ff6688">Enemies</span> patrol each floor</div>
+      <div>🛢 <span style="color:#f39c12">Barrels</span> cascade every floor</div>
+      <div>🔥 <span style="color:var(--danger)">Fire</span> hunts you relentlessly</div>
+      <div>🌧 <span style="color:#ffcc00">Fire Rain</span> falls ALWAYS</div>
+      <div>⚡ <span style="color:#aa88ff">Platforms</span> shift fast underfoot</div>
+      <div>👹 <span style="color:#ff6688">Enemies</span> patrol EVERY floor</div>
     </div>
     <button id="restartBtn" class="btn btn-danger" style="margin-top:10px;width:100%">⟳ RESTART ROUND</button>
   </div>
@@ -290,10 +291,11 @@ const FLOOR_COUNT = 10;
 const FLOOR_H = Math.floor(CH / FLOOR_COUNT);   // each band height = 62px
 const PLATFORM_Y_IN_BAND = 50;                   // platform sits 50px below band top
 const PW = 14, PH = 16;                          // player width/height
-const GRAVITY = 0.5;
-const MOVE_SPD = 3.2;
-const JUMP_V = -11;
+const GRAVITY = 0.68;       // heavy — falls fast, no floaty jumps
+const MOVE_SPD = 1.8;       // slow deliberate walk
+const JUMP_V = -7.8;        // short hop — can't skip floors
 const LADDER_W = 18;
+const RAIN_INTERVAL = 280;  // ms between each fire-rain drop (local timer)
 const MAX_PLAYERS = 5;
 const COLORS = ['#ffcc00','#ff4488','#44ffaa','#ff8833','#aa88ff'];
 
@@ -313,8 +315,8 @@ function ladderCenterX(f) {
 }
 
 // Gap floors: 3, 6, 9 have a gap in the middle
-const GAP_FLOORS = new Set([3, 6, 9]);
-const GAP_W = 60;
+const GAP_FLOORS = new Set([2, 4, 6, 8, 9]);  // gaps on almost every floor
+const GAP_W = 85;                               // wide gaps = death zones
 function floorGap(f) {
   if (!GAP_FLOORS.has(f)) return null;
   const cx = CW / 2;
@@ -382,13 +384,25 @@ class FireBall {
     this.x = x;
     this.y = -20;
     this.targetX = targetX;
-    this.vy = 2.2;
-    this.vx = (targetX - x) * 0.012;
+    this.vy = 4.0;                         // much faster drop
+    this.vx = (targetX - x) * 0.022;      // stronger homing
     this.id = Math.random().toString(36).slice(2,8);
     this.age = 0;
     this.wobble = Math.random() * Math.PI * 2;
   }
-  get rect() { return { x: this.x - 7, y: this.y - 7, w: 14, h: 14 }; }
+  get rect() { return { x: this.x - 8, y: this.y - 8, w: 16, h: 16 }; }
+}
+
+class RainDrop {
+  constructor(x) {
+    this.x = x;
+    this.y = -10 - Math.random() * 40;
+    this.vy = 3.8 + Math.random() * 2.5;  // fast rain
+    this.id = Math.random().toString(36).slice(2,8);
+    this.age = 0;
+    this.size = 5 + Math.random() * 4;
+  }
+  get rect() { return { x: this.x - this.size, y: this.y - this.size, w: this.size*2, h: this.size*2 }; }
 }
 
 class MovingPlatform {
@@ -449,6 +463,8 @@ let fireballs = [];
 // Moving platforms (always present, same on all clients, deterministic)
 let movingPlatforms = [];
 let enemies = [];
+let rainDrops = [];       // fire rain — always active
+let rainTimer = 0;        // local timer for rain spawning
 
 // Input
 const keys = {};
@@ -461,6 +477,9 @@ let dbSpawns = {};
 // Timing
 let raf = null;
 let lastTime = 0;
+let soloBarrelTimer = 0;
+let soloFireTimer = 0;
+let soloBarrelTimer2 = 0;
 
 // Spawn tracking (host writes new spawn IDs, all clients simulate same hazards)
 let knownSpawnIds = new Set();
@@ -469,14 +488,24 @@ let knownSpawnIds = new Set();
 function buildStaticEntities() {
   movingPlatforms = [];
   enemies = [];
-  // moving platforms on floors 2, 5, 8
-  movingPlatforms.push(new MovingPlatform(2, 40, 200, 1.2));
-  movingPlatforms.push(new MovingPlatform(5, CW - 220, CW - 40, 1.5));
-  movingPlatforms.push(new MovingPlatform(8, 60, 260, 1.8));
-  // enemies on floors 3, 6, 9 (gap floors, harder!)
-  enemies.push(new Enemy(3, 20, CW - 60, 1.1));
-  enemies.push(new Enemy(6, 20, CW - 60, 1.5));
-  enemies.push(new Enemy(9, 20, CW - 60, 2.0));
+  rainDrops = [];
+
+  // Moving platforms — more, faster, shorter — harder to stand on
+  movingPlatforms.push(new MovingPlatform(2, 30,  180, 2.0));
+  movingPlatforms.push(new MovingPlatform(3, CW-190, CW-30, 2.4));
+  movingPlatforms.push(new MovingPlatform(5, 20,  200, 2.8));
+  movingPlatforms.push(new MovingPlatform(7, CW-210, CW-20, 3.2));
+  movingPlatforms.push(new MovingPlatform(9, 50,  180, 3.8));
+
+  // Enemies on almost every floor — fast patrols
+  enemies.push(new Enemy(2,  20, CW - 40, 1.4));
+  enemies.push(new Enemy(3,  20, CW - 40, 1.8));
+  enemies.push(new Enemy(4,  20, CW - 40, 1.6));
+  enemies.push(new Enemy(5,  20, CW - 40, 2.0));
+  enemies.push(new Enemy(6,  20, CW - 40, 2.4));
+  enemies.push(new Enemy(7,  15, CW - 30, 2.8));
+  enemies.push(new Enemy(8,  15, CW - 30, 2.2));
+  enemies.push(new Enemy(9,  10, CW - 20, 3.5));
 }
 
 /* ── Rect Collision ── */
@@ -628,22 +657,56 @@ function spawnFireLocal(data) {
 }
 
 function stepHazards(dt) {
-  // Barrels
+  // ── Fire Rain (always active, local-only) ──
+  rainTimer += 16.666 * dt;
+  if (rainTimer >= RAIN_INTERVAL) {
+    rainTimer = 0;
+    // spawn 2-4 drops each tick so it really pours
+    const count = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      rainDrops.push(new RainDrop(Math.random() * CW));
+    }
+  }
+
+  // Step rain drops
+  for (let i = rainDrops.length - 1; i >= 0; i--) {
+    const r = rainDrops[i];
+    r.age++;
+    r.y += r.vy * dt;
+    // hit a floor? explode (just remove) — BUT kill player if touched
+    let hitFloor = false;
+    for (let f = 1; f <= FLOOR_COUNT; f++) {
+      const sy = floorSurfaceY(f);
+      const gap = floorGap(f);
+      if (r.y >= sy - 2) {
+        if (gap && r.x > gap.x1 && r.x < gap.x2) {
+          // falls through gap — continue
+        } else {
+          hitFloor = true; break;
+        }
+      }
+    }
+    if (hitFloor || r.y > CH + 20) { rainDrops.splice(i, 1); continue; }
+    // collision with player
+    if (!local.dead && overlap(local.rect, r.rect)) { die('fire rain'); return; }
+  }
+
+  // ── Barrels — faster, cascade down floors ──
   for (let i = barrels.length - 1; i >= 0; i--) {
     const b = barrels[i];
     b.age++;
     b.x += b.dir * b.speed * dt;
     b.y += b.vy * dt;
-    b.vy += GRAVITY * 0.7 * dt;
+    b.vy += GRAVITY * 0.8 * dt;
 
     // Floor collision for barrel
     let onFloor = false;
     for (let f = 1; f <= FLOOR_COUNT; f++) {
       const sy = floorSurfaceY(f);
-      if (b.vy >= 0 && b.y >= sy - 2 && b.y <= sy + 14) {
+      if (b.vy >= 0 && b.y >= sy - 2 && b.y <= sy + 16) {
         const gap = floorGap(f);
         if (gap && b.x > gap.x1 && b.x < gap.x2) {
-          // barrel falls through gap — intentional!
+          // falls through gap!
         } else {
           b.y = sy - 2;
           b.vy = 0;
@@ -654,30 +717,27 @@ function stepHazards(dt) {
       }
     }
 
-    // When barrel reaches edge of a floor, let it fall to the next floor
-    if (onFloor) {
-      // Check if at edge
-      if (b.x < 0 || b.x > CW) {
-        // reverse and move to next lower floor (fall down)
-        b.dir *= -1;
-        b.floor = Math.max(1, b.floor - 1);
-        b.y = floorSurfaceY(b.floor) - 30;
-        b.vy = 3;
-      }
+    // Edge: barrel cascades DOWN to next floor and keeps rolling (DK style)
+    if (onFloor && (b.x < -4 || b.x > CW + 4)) {
+      b.dir *= -1;
+      const nextFloor = Math.max(1, b.floor - 1);
+      b.floor = nextFloor;
+      b.y = floorSurfaceY(nextFloor) - 40;
+      b.vy = 4;
+      b.speed = Math.min(b.speed + 0.3, 5.5); // accelerate on each bounce!
     }
 
-    // Kill old barrels
-    if (b.age > 600 || b.y > CH + 60) barrels.splice(i, 1);
+    if (b.age > 900 || b.y > CH + 80) barrels.splice(i, 1);
   }
 
-  // Fireballs
+  // ── Targeted Fireballs ──
   for (let i = fireballs.length - 1; i >= 0; i--) {
     const f = fireballs[i];
     f.age++;
-    f.wobble += 0.15;
-    f.x += f.vx * dt + Math.sin(f.wobble) * 0.8;
+    f.wobble += 0.18;
+    f.x += f.vx * dt + Math.sin(f.wobble) * 1.2;
     f.y += f.vy * dt;
-    if (f.y > CH + 40 || f.age > 400) fireballs.splice(i, 1);
+    if (f.y > CH + 40 || f.age > 500) fireballs.splice(i, 1);
   }
 }
 
@@ -686,10 +746,14 @@ let hostTimers = [];
 
 function startHostTasks() {
   stopHostTasks();
-  // Barrels every 1.8s
-  hostTimers.push(setInterval(hostSpawnBarrel, 1800));
-  // Fire every 3.5s
-  hostTimers.push(setInterval(hostSpawnFire, 3500));
+  // Barrels every 900ms — nearly twice per second
+  hostTimers.push(setInterval(hostSpawnBarrel, 900));
+  // Extra barrel burst — second independent stream
+  hostTimers.push(setInterval(hostSpawnBarrel, 1300));
+  // Targeted fire every 1.8s — relentless hunting
+  hostTimers.push(setInterval(hostSpawnFire, 1800));
+  // Extra fire salvo — 3 at once every 5s
+  hostTimers.push(setInterval(hostSpawnFireSalvo, 5000));
 }
 
 function stopHostTasks() {
@@ -699,13 +763,21 @@ function stopHostTasks() {
 
 async function hostSpawnBarrel() {
   if (!room) return;
-  const f = 1 + Math.floor(Math.random() * 8); // floors 1-8
+  const f = 1 + Math.floor(Math.random() * 9); // all floors 1-9
   const side = ladderSide(f);
-  const startX = side === 'right' ? 10 : CW - 10;
+  const startX = side === 'right' ? 5 : CW - 5;
   const dir = side === 'right' ? 1 : -1;
-  const spd = 1.5 + Math.random() * 1.5;
+  const spd = 2.8 + Math.random() * 2.2; // fast! was 1.5-3.0, now 2.8-5.0
   const id = 'b_' + Math.random().toString(36).slice(2, 8);
   await push(ref(db, `rooms/${room}/spawns`), { id, type: 'barrel', floor: f, startX, dir, speed: spd, ts: Date.now() });
+}
+
+async function hostSpawnFireSalvo() {
+  if (!room) return;
+  // 3 fireballs at once targeting same player — nearly unavoidable
+  for (let i = 0; i < 3; i++) {
+    await hostSpawnFire();
+  }
 }
 
 async function hostSpawnFire() {
@@ -856,7 +928,7 @@ async function respawnAll() {
 async function resetRound() {
   if (!room) { alert('Join a room first!'); return; }
   if (!confirm('Reset the round and clear all spawns?')) return;
-  barrels = []; fireballs = []; knownSpawnIds.clear();
+  barrels = []; fireballs = []; rainDrops = []; knownSpawnIds.clear();
   await set(ref(db, `rooms/${room}/spawns`), null);
   await set(ref(db, `rooms/${room}/scores`), null);
   await respawnAll();
@@ -955,6 +1027,24 @@ function showWin(msg) {
   el.style.display = 'flex';
   clearTimeout(winTimer);
   winTimer = setTimeout(() => { el.style.display = 'none'; }, 2500);
+}
+
+/* ── Solo Spawn Helpers ── */
+function spawnSoloBarrel() {
+  const f = 1 + Math.floor(Math.random() * 9);
+  const side = ladderSide(f);
+  const startX = side === 'right' ? 5 : CW - 5;
+  const dir = side === 'right' ? 1 : -1;
+  const spd = 2.8 + Math.random() * 2.2;
+  const b = new Barrel(startX, floorSurfaceY(f) - 8, dir, spd, f);
+  barrels.push(b);
+}
+
+function spawnSoloFire() {
+  const lx = local.x + PW / 2;
+  const startX = Math.random() * CW;
+  const fb = new FireBall(startX, lx + (Math.random() - 0.5) * 60);
+  fireballs.push(fb);
 }
 
 /* ── Render ── */
@@ -1090,6 +1180,28 @@ function render() {
     ctx.beginPath(); ctx.arc(f.x - f.vx * 3, f.y - f.vy * 3, 7, 0, Math.PI * 2); ctx.fill();
   }
 
+  // ── Fire Rain rendering ──
+  for (const r of rainDrops) {
+    const flicker = 0.7 + 0.3 * Math.sin(r.age * 0.5 + r.x);
+    // outer glow
+    const grd = ctx.createRadialGradient(r.x, r.y, 0, r.x, r.y, r.size * 2);
+    grd.addColorStop(0, `rgba(255,255,150,${flicker})`);
+    grd.addColorStop(0.4, `rgba(255,120,0,${flicker * 0.8})`);
+    grd.addColorStop(1, `rgba(255,30,0,0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.size * 2, 0, Math.PI * 2); ctx.fill();
+    // core
+    ctx.fillStyle = `rgba(255,240,100,${flicker})`;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.size * 0.6, 0, Math.PI * 2); ctx.fill();
+    // tail
+    ctx.strokeStyle = `rgba(255,80,0,${flicker * 0.5})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(r.x, r.y);
+    ctx.lineTo(r.x - r.vx * 3, r.y - r.vy * 5);
+    ctx.stroke();
+  }
+
   // Remote players
   for (const rp of Object.values(remotePlayers)) {
     drawPlayer(rp, false);
@@ -1175,6 +1287,27 @@ function loop(ts) {
   // Physics always runs — movement works with or without a room
   stepPlayer(dt);
   stepHazards(dt);
+
+  // Solo mode: spawn hazards locally without Firebase
+  if (!joined) {
+    const frameMs = 16.666 * dt;
+    soloBarrelTimer += frameMs;
+    soloBarrelTimer2 += frameMs;
+    soloFireTimer += frameMs;
+    if (soloBarrelTimer >= 900) {
+      soloBarrelTimer = 0;
+      spawnSoloBarrel();
+    }
+    if (soloBarrelTimer2 >= 1300) {
+      soloBarrelTimer2 = 0;
+      spawnSoloBarrel();
+    }
+    if (soloFireTimer >= 1800) {
+      soloFireTimer = 0;
+      spawnSoloFire();
+    }
+  }
+
   // Only sync to Firebase when in a room
   if (joined) {
     syncTimer++;
