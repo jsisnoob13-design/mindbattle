@@ -641,9 +641,11 @@ function stepHazards(dt) {
 
   // ── Fire Rain: pass THROUGH all floors, kill on contact ──
   rainTimer += frameMs;
-  if (rainTimer >= 220) {   // spawn interval
+  // CHANGE 1: Increased interval to 800ms for more realistic, dodgeable gaps
+  if (rainTimer >= 800) {   
     rainTimer = 0;
-    const count = 2 + Math.floor(Math.random() * 2);   // 2-3 drops per tick
+    // CHANGE 1: Reduced to 1-2 drops per tick
+    const count = 1 + Math.floor(Math.random() * 2);   
     for (let i = 0; i < count; i++) {
       rainDrops.push(new RainDrop(8 + Math.random() * (CW - 16)));
     }
@@ -668,15 +670,25 @@ function stepHazards(dt) {
 
     const sy = floorSurfaceY(f);
 
+    // CHANGE 2: Count how many active barrels are currently on THIS floor
+    let activeBarrels = 0;
+    for (let i = 0; i < barrels.length; i++) {
+      if (barrels[i].floor === f) activeBarrels++;
+    }
+
     // LEFT side spawn (barrels go right)
     timers.leftMs += frameMs;
     if (timers.leftMs >= intervalMs) {
       timers.leftMs = 0;
-      for (let n = 0; n < count; n++) {
-        const spd = spdMin + Math.random() * (spdMax - spdMin);
-        // stagger multiple barrels slightly
-        const b = new Barrel(4 + n * 6, sy - 10, 1, spd, f);
-        barrels.push(b);
+      // CHANGE 2: Only spawn if we are under the limit of 3
+      if (activeBarrels < 3) {
+        for (let n = 0; n < count; n++) {
+          if (activeBarrels >= 3) break; // Extra safety check inside the loop
+          const spd = spdMin + Math.random() * (spdMax - spdMin);
+          const b = new Barrel(4 + n * 6, sy - 10, 1, spd, f);
+          barrels.push(b);
+          activeBarrels++;
+        }
       }
     }
 
@@ -684,10 +696,15 @@ function stepHazards(dt) {
     timers.rightMs += frameMs;
     if (timers.rightMs >= intervalMs) {
       timers.rightMs = 0;
-      for (let n = 0; n < count; n++) {
-        const spd = spdMin + Math.random() * (spdMax - spdMin);
-        const b = new Barrel(CW - 4 - n * 6, sy - 10, -1, spd, f);
-        barrels.push(b);
+      // CHANGE 2: Only spawn if we are under the limit of 3
+      if (activeBarrels < 3) {
+        for (let n = 0; n < count; n++) {
+          if (activeBarrels >= 3) break; // Extra safety check inside the loop
+          const spd = spdMin + Math.random() * (spdMax - spdMin);
+          const b = new Barrel(CW - 4 - n * 6, sy - 10, -1, spd, f);
+          barrels.push(b);
+          activeBarrels++;
+        }
       }
     }
   }
