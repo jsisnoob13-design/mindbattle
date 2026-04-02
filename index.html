@@ -247,11 +247,10 @@ canvas{
   <div class="card" style="margin-top:10px">
     <div class="card-title">DANGER</div>
     <div style="font-size:15px;line-height:1.9;color:var(--muted)">
-      <div>🛢 <span style="color:#f39c12">Barrels</span> cascade every floor</div>
-      <div>🔥 <span style="color:var(--danger)">Fire</span> hunts you relentlessly</div>
-      <div>🌧 <span style="color:#ffcc00">Fire Rain</span> falls ALWAYS</div>
-      <div>⚡ <span style="color:#aa88ff">Platforms</span> shift fast underfoot</div>
-      <div>👹 <span style="color:#ff6688">Enemies</span> patrol EVERY floor</div>
+      <div>🛢 <span style="color:#f39c12">Barrels</span> — more every floor</div>
+      <div>🌧 <span style="color:#ffcc00">Fire Rain</span> — falls through all</div>
+      <div>🔥 <span style="color:var(--danger)">Fire</span> — hunts the leader</div>
+      <div>👹 <span style="color:#ff6688">Enemies</span> — floor 3 onwards</div>
     </div>
     <button id="restartBtn" class="btn btn-danger" style="margin-top:10px;width:100%">⟳ RESTART ROUND</button>
   </div>
@@ -295,7 +294,6 @@ const GRAVITY = 0.68;       // heavy — falls fast, no floaty jumps
 const MOVE_SPD = 1.8;       // slow deliberate walk
 const JUMP_V = -7.8;        // short hop — can't skip floors
 const LADDER_W = 18;
-const RAIN_INTERVAL = 280;  // ms between each fire-rain drop (local timer)
 const MAX_PLAYERS = 5;
 const COLORS = ['#ffcc00','#ff4488','#44ffaa','#ff8833','#aa88ff'];
 
@@ -323,8 +321,19 @@ function floorGap(f) {
   return { x1: cx - GAP_W/2, x2: cx + GAP_W/2 };
 }
 
-/* ── Spawn Zones ── */
-// Barrel spawn zones: on the platform, near the opposite side from the ladder
+
+// Per-floor barrel config: [barrelsPerSide, intervalMs, speedMin, speedMax]
+// Slow floor 1-3, ramp up 4-6, scary 7-9
+const FLOOR_BARREL_CONFIG = {
+  2: [1, 3200, 0.8, 1.0],
+  3: [1, 2800, 0.9, 1.2],
+  4: [2, 2400, 1.1, 1.5],
+  5: [2, 2000, 1.4, 1.8],
+  6: [2, 1700, 1.7, 2.2],
+  7: [3, 1400, 2.2, 2.8],
+  8: [3, 1100, 2.6, 3.4],
+  9: [4,  900, 3.2, 4.2],
+};
 function barrelSpawnX(f) {
   return ladderSide(f) === 'right' ? 10 : CW - 10;
 }
@@ -405,25 +414,6 @@ class RainDrop {
   get rect() { return { x: this.x - this.size, y: this.y - this.size, w: this.size*2, h: this.size*2 }; }
 }
 
-class MovingPlatform {
-  constructor(f, x1, x2, speed) {
-    this.floor = f;
-    this.x = x1;
-    this.x1 = x1; this.x2 = x2;
-    this.y = floorSurfaceY(f);
-    this.speed = speed;
-    this.dir = 1;
-    this.w = 60; this.h = 10;
-    this.id = `mp_${f}`;
-  }
-  update() {
-    this.x += this.speed * this.dir;
-    if (this.x + this.w >= this.x2) this.dir = -1;
-    if (this.x <= this.x1) this.dir = 1;
-  }
-  get rect() { return { x: this.x, y: this.y, w: this.w, h: this.h }; }
-}
-
 class Enemy {
   constructor(f, x1, x2, speed) {
     this.floor = f;
@@ -460,8 +450,6 @@ let remotePlayers = {};
 let barrels = [];
 let fireballs = [];
 
-// Moving platforms (always present, same on all clients, deterministic)
-let movingPlatforms = [];
 let enemies = [];
 let rainDrops = [];       // fire rain — always active
 let rainTimer = 0;        // local timer for rain spawning
@@ -477,35 +465,40 @@ let dbSpawns = {};
 // Timing
 let raf = null;
 let lastTime = 0;
-let soloBarrelTimer = 0;
 let soloFireTimer = 0;
-let soloBarrelTimer2 = 0;
 
 // Spawn tracking (host writes new spawn IDs, all clients simulate same hazards)
 let knownSpawnIds = new Set();
 
 /* ── Init Map Entities ── */
+/* ── Per-floor barrel spawner state ── */
+// floorBarrelTimers[f] = { leftTimer, rightTimer } tracking ms since last spawn
+let floorBarrelTimers = {};
+
 function buildStaticEntities() {
-  movingPlatforms = [];
   enemies = [];
   rainDrops = [];
+  barrels = [];
+  fireballs = [];
+  floorBarrelTimers = {};
 
-  // Moving platforms — more, faster, shorter — harder to stand on
-  movingPlatforms.push(new MovingPlatform(2, 30,  180, 2.0));
-  movingPlatforms.push(new MovingPlatform(3, CW-190, CW-30, 2.4));
-  movingPlatforms.push(new MovingPlatform(5, 20,  200, 2.8));
-  movingPlatforms.push(new MovingPlatform(7, CW-210, CW-20, 3.2));
-  movingPlatforms.push(new MovingPlatform(9, 50,  180, 3.8));
+  // Init per-floor barrel timers — stagger starts so they don't all sync up
+  for (const f in FLOOR_BARREL_CONFIG) {
+    const cfg = FLOOR_BARREL_CONFIG[f];
+    floorBarrelTimers[f] = {
+      leftMs:  Math.random() * cfg[1],   // stagger left side
+      rightMs: cfg[1] * 0.5 + Math.random() * cfg[1] * 0.3,  // offset right side
+    };
+  }
 
-  // Enemies on almost every floor — fast patrols
-  enemies.push(new Enemy(2,  20, CW - 40, 1.4));
-  enemies.push(new Enemy(3,  20, CW - 40, 1.8));
-  enemies.push(new Enemy(4,  20, CW - 40, 1.6));
-  enemies.push(new Enemy(5,  20, CW - 40, 2.0));
-  enemies.push(new Enemy(6,  20, CW - 40, 2.4));
-  enemies.push(new Enemy(7,  15, CW - 30, 2.8));
-  enemies.push(new Enemy(8,  15, CW - 30, 2.2));
-  enemies.push(new Enemy(9,  10, CW - 20, 3.5));
+  // Enemies: 1 per floor 3-9, escalating speed
+  enemies.push(new Enemy(3,  20, CW - 40, 1.1));
+  enemies.push(new Enemy(4,  20, CW - 40, 1.4));
+  enemies.push(new Enemy(5,  20, CW - 40, 1.7));
+  enemies.push(new Enemy(6,  20, CW - 40, 2.0));
+  enemies.push(new Enemy(7,  15, CW - 30, 2.4));
+  enemies.push(new Enemy(8,  15, CW - 30, 2.7));
+  enemies.push(new Enemy(9,  10, CW - 20, 3.2));
 }
 
 /* ── Rect Collision ── */
@@ -576,19 +569,6 @@ function stepPlayer(dt) {
 
   if (highestFloor > 0) p.floor = highestFloor;
 
-  // Moving platform collision (stand on top)
-  for (const mp of movingPlatforms) {
-    const mpr = mp.rect;
-    if (p.vy >= 0 &&
-        p.x + PW > mpr.x && p.x < mpr.x + mpr.w &&
-        p.y + PH >= mpr.y && p.y + PH <= mpr.y + 20) {
-      p.y = mpr.y - PH;
-      p.vy = 0;
-      p.onGround = true;
-      p.x += mp.speed * mp.dir * dt; // carry
-    }
-  }
-
   // Kill if falls off screen bottom
   if (p.y > CH + 40) { die('fell'); return; }
 
@@ -657,77 +637,74 @@ function spawnFireLocal(data) {
 }
 
 function stepHazards(dt) {
-  // ── Fire Rain (always active, local-only) ──
-  rainTimer += 16.666 * dt;
-  if (rainTimer >= RAIN_INTERVAL) {
+  const frameMs = 16.666 * dt;
+
+  // ── Fire Rain: pass THROUGH all floors, kill on contact ──
+  rainTimer += frameMs;
+  if (rainTimer >= 220) {   // spawn interval
     rainTimer = 0;
-    // spawn 2-4 drops each tick so it really pours
-    const count = 2 + Math.floor(Math.random() * 3);
+    const count = 2 + Math.floor(Math.random() * 2);   // 2-3 drops per tick
     for (let i = 0; i < count; i++) {
-      rainDrops.push(new RainDrop(Math.random() * CW));
+      rainDrops.push(new RainDrop(8 + Math.random() * (CW - 16)));
     }
   }
-
-  // Step rain drops
   for (let i = rainDrops.length - 1; i >= 0; i--) {
     const r = rainDrops[i];
     r.age++;
     r.y += r.vy * dt;
-    // hit a floor? explode (just remove) — BUT kill player if touched
-    let hitFloor = false;
-    for (let f = 1; f <= FLOOR_COUNT; f++) {
-      const sy = floorSurfaceY(f);
-      const gap = floorGap(f);
-      if (r.y >= sy - 2) {
-        if (gap && r.x > gap.x1 && r.x < gap.x2) {
-          // falls through gap — continue
-        } else {
-          hitFloor = true; break;
-        }
-      }
-    }
-    if (hitFloor || r.y > CH + 20) { rainDrops.splice(i, 1); continue; }
-    // collision with player
+    // Rain passes THROUGH all floors — only stops at canvas bottom
+    if (r.y > CH + 20) { rainDrops.splice(i, 1); continue; }
+    // Kill player on contact
     if (!local.dead && overlap(local.rect, r.rect)) { die('fire rain'); return; }
   }
 
-  // ── Barrels — faster, cascade down floors ──
+  // ── Per-floor barrel spawners ──
+  for (const fStr in FLOOR_BARREL_CONFIG) {
+    const f = parseInt(fStr);
+    const cfg = FLOOR_BARREL_CONFIG[fStr];  // [count, intervalMs, spdMin, spdMax]
+    const [count, intervalMs, spdMin, spdMax] = cfg;
+    const timers = floorBarrelTimers[fStr];
+    if (!timers) continue;
+
+    const sy = floorSurfaceY(f);
+
+    // LEFT side spawn (barrels go right)
+    timers.leftMs += frameMs;
+    if (timers.leftMs >= intervalMs) {
+      timers.leftMs = 0;
+      for (let n = 0; n < count; n++) {
+        const spd = spdMin + Math.random() * (spdMax - spdMin);
+        // stagger multiple barrels slightly
+        const b = new Barrel(4 + n * 6, sy - 10, 1, spd, f);
+        barrels.push(b);
+      }
+    }
+
+    // RIGHT side spawn (barrels go left) — offset by half interval
+    timers.rightMs += frameMs;
+    if (timers.rightMs >= intervalMs) {
+      timers.rightMs = 0;
+      for (let n = 0; n < count; n++) {
+        const spd = spdMin + Math.random() * (spdMax - spdMin);
+        const b = new Barrel(CW - 4 - n * 6, sy - 10, -1, spd, f);
+        barrels.push(b);
+      }
+    }
+  }
+
+  // ── Step barrels: stay on their floor, despawn at far edge ──
   for (let i = barrels.length - 1; i >= 0; i--) {
     const b = barrels[i];
     b.age++;
     b.x += b.dir * b.speed * dt;
-    b.y += b.vy * dt;
-    b.vy += GRAVITY * 0.8 * dt;
 
-    // Floor collision for barrel
-    let onFloor = false;
-    for (let f = 1; f <= FLOOR_COUNT; f++) {
-      const sy = floorSurfaceY(f);
-      if (b.vy >= 0 && b.y >= sy - 2 && b.y <= sy + 16) {
-        const gap = floorGap(f);
-        if (gap && b.x > gap.x1 && b.x < gap.x2) {
-          // falls through gap!
-        } else {
-          b.y = sy - 2;
-          b.vy = 0;
-          onFloor = true;
-          b.floor = f;
-          break;
-        }
-      }
+    // Snap barrel to its floor surface (barrels don't fall between floors)
+    b.y = floorSurfaceY(b.floor) - 10;
+
+    // Despawn when barrel reaches far edge (clean disappear, not cascade)
+    if (b.x < -20 || b.x > CW + 20 || b.age > 700) {
+      barrels.splice(i, 1); continue;
     }
-
-    // Edge: barrel cascades DOWN to next floor and keeps rolling (DK style)
-    if (onFloor && (b.x < -4 || b.x > CW + 4)) {
-      b.dir *= -1;
-      const nextFloor = Math.max(1, b.floor - 1);
-      b.floor = nextFloor;
-      b.y = floorSurfaceY(nextFloor) - 40;
-      b.vy = 4;
-      b.speed = Math.min(b.speed + 0.3, 5.5); // accelerate on each bounce!
-    }
-
-    if (b.age > 900 || b.y > CH + 80) barrels.splice(i, 1);
   }
 
   // ── Targeted Fireballs ──
@@ -735,7 +712,7 @@ function stepHazards(dt) {
     const f = fireballs[i];
     f.age++;
     f.wobble += 0.18;
-    f.x += f.vx * dt + Math.sin(f.wobble) * 1.2;
+    f.x += f.vx * dt + Math.sin(f.wobble) * 1.0;
     f.y += f.vy * dt;
     if (f.y > CH + 40 || f.age > 500) fireballs.splice(i, 1);
   }
@@ -746,30 +723,15 @@ let hostTimers = [];
 
 function startHostTasks() {
   stopHostTasks();
-  // Barrels every 900ms — nearly twice per second
-  hostTimers.push(setInterval(hostSpawnBarrel, 900));
-  // Extra barrel burst — second independent stream
-  hostTimers.push(setInterval(hostSpawnBarrel, 1300));
-  // Targeted fire every 1.8s — relentless hunting
-  hostTimers.push(setInterval(hostSpawnFire, 1800));
-  // Extra fire salvo — 3 at once every 5s
-  hostTimers.push(setInterval(hostSpawnFireSalvo, 5000));
+  // Barrels are now per-floor local — no DB barrel spawning needed
+  // Fire: targeted every 2.5s (let the rain and barrels do the heavy lifting)
+  hostTimers.push(setInterval(hostSpawnFire, 2500));
+  hostTimers.push(setInterval(hostSpawnFireSalvo, 6000));
 }
 
 function stopHostTasks() {
   hostTimers.forEach(t => clearInterval(t));
   hostTimers = [];
-}
-
-async function hostSpawnBarrel() {
-  if (!room) return;
-  const f = 1 + Math.floor(Math.random() * 9); // all floors 1-9
-  const side = ladderSide(f);
-  const startX = side === 'right' ? 5 : CW - 5;
-  const dir = side === 'right' ? 1 : -1;
-  const spd = 2.8 + Math.random() * 2.2; // fast! was 1.5-3.0, now 2.8-5.0
-  const id = 'b_' + Math.random().toString(36).slice(2, 8);
-  await push(ref(db, `rooms/${room}/spawns`), { id, type: 'barrel', floor: f, startX, dir, speed: spd, ts: Date.now() });
 }
 
 async function hostSpawnFireSalvo() {
@@ -800,8 +762,8 @@ function onSpawnsChange(val) {
     const s = val[key];
     if (knownSpawnIds.has(s.id)) continue;
     knownSpawnIds.add(s.id);
-    if (s.type === 'barrel') spawnBarrelLocal(s);
-    else if (s.type === 'fire') spawnFireLocal(s);
+    if (s.type === 'fire') spawnFireLocal(s);
+    // barrels are now per-floor local — no DB barrel spawning
   }
 }
 
@@ -928,7 +890,7 @@ async function respawnAll() {
 async function resetRound() {
   if (!room) { alert('Join a room first!'); return; }
   if (!confirm('Reset the round and clear all spawns?')) return;
-  barrels = []; fireballs = []; rainDrops = []; knownSpawnIds.clear();
+  barrels = []; fireballs = []; rainDrops = []; knownSpawnIds.clear(); buildStaticEntities();
   await set(ref(db, `rooms/${room}/spawns`), null);
   await set(ref(db, `rooms/${room}/scores`), null);
   await respawnAll();
@@ -1030,20 +992,12 @@ function showWin(msg) {
 }
 
 /* ── Solo Spawn Helpers ── */
-function spawnSoloBarrel() {
-  const f = 1 + Math.floor(Math.random() * 9);
-  const side = ladderSide(f);
-  const startX = side === 'right' ? 5 : CW - 5;
-  const dir = side === 'right' ? 1 : -1;
-  const spd = 2.8 + Math.random() * 2.2;
-  const b = new Barrel(startX, floorSurfaceY(f) - 8, dir, spd, f);
-  barrels.push(b);
-}
-
+// Per-floor barrels are spawned automatically in stepHazards via floorBarrelTimers
+// Only fire needs manual solo spawning
 function spawnSoloFire() {
   const lx = local.x + PW / 2;
   const startX = Math.random() * CW;
-  const fb = new FireBall(startX, lx + (Math.random() - 0.5) * 60);
+  const fb = new FireBall(startX, lx + (Math.random() - 0.5) * 50);
   fireballs.push(fb);
 }
 
@@ -1116,14 +1070,6 @@ function render() {
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.font = '10px monospace';
     ctx.fillText(`${f}`, 4, sy - 2);
-  }
-
-  // Moving platforms
-  for (const mp of movingPlatforms) {
-    ctx.fillStyle = '#aa88ff';
-    ctx.fillRect(mp.x, mp.y, mp.w, mp.h);
-    ctx.fillStyle = 'rgba(180,140,255,0.4)';
-    ctx.fillRect(mp.x, mp.y, mp.w, 3);
   }
 
   // Enemies
@@ -1278,31 +1224,16 @@ function loop(ts) {
   lastTime = ts;
 
   // Move static entities
-  for (const mp of movingPlatforms) mp.update();
   for (const e of enemies) e.update();
 
-  // Physics always runs
-  stepPlayer(dt);
-  stepHazards(dt);
   // Physics always runs — movement works with or without a room
   stepPlayer(dt);
   stepHazards(dt);
 
-  // Solo mode: spawn hazards locally without Firebase
+  // Solo mode: fire only (barrels are spawned by floorBarrelTimers inside stepHazards)
   if (!joined) {
-    const frameMs = 16.666 * dt;
-    soloBarrelTimer += frameMs;
-    soloBarrelTimer2 += frameMs;
-    soloFireTimer += frameMs;
-    if (soloBarrelTimer >= 900) {
-      soloBarrelTimer = 0;
-      spawnSoloBarrel();
-    }
-    if (soloBarrelTimer2 >= 1300) {
-      soloBarrelTimer2 = 0;
-      spawnSoloBarrel();
-    }
-    if (soloFireTimer >= 1800) {
+    soloFireTimer += 16.666 * dt;
+    if (soloFireTimer >= 2500) {
       soloFireTimer = 0;
       spawnSoloFire();
     }
