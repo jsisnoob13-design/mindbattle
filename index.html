@@ -516,6 +516,106 @@ function stepPlayer(dt) {
     return;
   }
 
+  // 1. Better Ladder Detection
+  let nearLadder = false;
+  let ladderX = 0;
+  for (let f = 1; f < FLOOR_COUNT; f++) {
+    const lx = ladderCenterX(f);
+    const bottomY = floorSurfaceY(f);
+    const topY = floorSurfaceY(f + 1);
+    
+    // Check horizontally AND vertically so you don't climb thin air
+    if (Math.abs(p.cx - lx) < LADDER_W && p.y + PH <= bottomY + 5 && p.y + PH >= topY) {
+      nearLadder = true; 
+      ladderX = lx; 
+      break; 
+    }
+  }
+
+  // 2. Ladder State
+  if (nearLadder && (keys.jump || keys.climb)) {
+    p.onLadder = true;
+    p.x = ladderX - PW / 2; // Snap perfectly to the center of the ladder
+  }
+  if (!nearLadder) p.onLadder = false;
+
+  // 3. Movement
+  if (p.onLadder) {
+    p.vx = 0;
+    p.vy = 0;
+    if (keys.jump) p.y -= 2.8 * dt;   // W climbs UP
+    if (keys.climb) p.y += 2.8 * dt;  // S climbs DOWN
+    p.onGround = false;
+  } else {
+    // Normal Jump (Restored the missing code!)
+    if ((keys.jump || keys.jumpalt) && p.onGround) {
+      p.vy = JUMP_V;
+      p.onGround = false;
+    }
+    
+    // Normal Walk
+    p.vx = 0;
+    if (keys.left)  { p.vx = -MOVE_SPD; p.facingRight = false; }
+    if (keys.right) { p.vx =  MOVE_SPD; p.facingRight = true; }
+    
+    // Gravity applies ONLY if you aren't holding onto a ladder
+    p.vy += GRAVITY * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+
+  // Clamp X bounds so you don't walk off the screen
+  if (p.x < 0) p.x = 0;
+  if (p.x + PW > CW) p.x = CW - PW;
+
+  // 4. Floor Collision
+  p.onGround = false;
+  let highestFloor = 0;
+
+  for (let f = 1; f <= FLOOR_COUNT; f++) {
+    const sy = floorSurfaceY(f);
+    if (p.vy >= 0 && p.y + PH >= sy && p.y + PH <= sy + 20) {
+      const gap = floorGap(f);
+      const px_center = p.x + PW / 2;
+      if (gap && px_center > gap.x1 && px_center < gap.x2) {
+        // Falling through the gap in the floor
+      } else {
+        p.y = sy - PH;
+        p.vy = 0;
+        p.onGround = true;
+        p.onLadder = false; // Disconnect from ladder once safely on the floor
+        if (f > highestFloor) highestFloor = f;
+      }
+    }
+  }
+
+  if (highestFloor > 0) p.floor = highestFloor;
+
+  // Kill if falls off screen bottom
+  if (p.y > CH + 40) { die('fell'); return; }
+
+  // Hazard collisions
+  for (const b of barrels) {
+    if (overlap(p.rect, b.rect)) { die('barrel'); return; }
+  }
+  for (const f of fireballs) {
+    if (overlap(p.rect, f.rect)) { die('fire'); return; }
+  }
+  for (const e of enemies) {
+    if (overlap(p.rect, e.rect)) { die('enemy'); return; }
+  }
+
+  // Win condition
+  if (p.floor >= FLOOR_COUNT && p.y <= floorSurfaceY(FLOOR_COUNT) - PH + 4) {
+    onWin();
+    return;
+  }
+
+  // Update floor label
+  document.getElementById('floorLabel').textContent = p.floor;
+  updateFloorBar(p.floor);
+}
+
   // Ladder detection: check all floor ladders around player
   let nearLadder = false, ladderFloor = 0;
   for (let f = 1; f < FLOOR_COUNT; f++) {
