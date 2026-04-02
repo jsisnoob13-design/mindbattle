@@ -523,16 +523,17 @@ function stepPlayer(dt) {
     if (Math.abs(p.cx - lx) < LADDER_W) { nearLadder = true; ladderFloor = f; break; }
   }
 
-  if (keys.climb && nearLadder) {
+// NEW LADDER LOGIC: 'W' goes UP, 'S' goes DOWN
+  if (nearLadder && (keys.jump || keys.climb)) {
     p.onLadder = true;
     p.vx = 0; p.vy = 0;
-    p.y -= 2.8 * dt;
+    if (keys.jump) p.y -= 2.8 * dt;   // W / Up Arrow climbs UP
+    if (keys.climb) p.y += 2.8 * dt;  // S / Down Arrow climbs DOWN
     p.onGround = false;
   } else {
     p.onLadder = false;
+    // Spacebar (jumpalt) or W (jump) triggers normal jump if on the ground
     if ((keys.jump || keys.jumpalt) && p.onGround) {
-      p.vy = JUMP_V;
-      p.onGround = false;
     }
     p.vx = 0;
     if (keys.left)  { p.vx = -MOVE_SPD; p.facingRight = false; }
